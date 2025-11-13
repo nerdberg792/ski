@@ -23,10 +23,12 @@ export function PromptInputBox({
   inputRef,
   className,
 }: PromptInputBoxProps) {
+  const hasText = inputValue.trim().length > 0;
+  
   return (
     <div
       className={cn(
-        "pointer-events-auto flex items-center gap-2 px-2 py-1.5",
+        "pointer-events-auto flex items-center gap-1.5 px-1.5 py-1 min-w-0",
         className
       )}
       style={{

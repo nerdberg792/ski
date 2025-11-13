@@ -296,7 +296,7 @@ export default function App() {
     return (
       <div
         className={cn(
-          "relative flex h-full w-full transition-all duration-200 overflow-hidden",
+          "relative flex h-full w-full transition-opacity duration-300 ease-in-out overflow-hidden",
           isVisible ? "opacity-100" : "opacity-0",
         )}
         style={{ 
@@ -305,7 +305,7 @@ export default function App() {
           borderRadius: 0,
         } as React.CSSProperties}
       >
-        <div className="relative flex h-full w-full items-center gap-1.5 pl-3 pr-3 py-1.5 z-10 overflow-hidden" style={{ WebkitAppRegion: "drag" } as React.CSSProperties}>
+        <div className="relative flex h-full w-full items-center gap-1 pl-2 pr-2 py-1 z-10 overflow-hidden" style={{ WebkitAppRegion: "drag" } as React.CSSProperties}>
           <Logo isExpanded={false} />
           <ChatInputBar
             inputValue={inputValue}
@@ -323,7 +323,7 @@ export default function App() {
 
   return (
     <div 
-      className="relative flex h-full w-full flex-col text-white overflow-hidden" 
+      className="relative flex h-full w-full flex-col text-white overflow-hidden transition-all duration-300 ease-in-out" 
       style={{ 
         background: "transparent",
         backdropFilter: "blur(8px)",

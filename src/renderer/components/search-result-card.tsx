@@ -36,7 +36,7 @@ export function SearchResultCard({ result, index, style, onSelect }: SearchResul
   return (
     <Card
       className={cn(
-        "group relative flex flex-col overflow-hidden shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer h-full",
+        "group relative flex flex-col overflow-hidden shadow-lg transition-[transform,box-shadow] duration-300 ease-in-out hover:shadow-xl hover:scale-[1.02] cursor-pointer h-full will-change-transform",
         SIZE_CLASSES[result.size],
       )}
       style={{
@@ -60,7 +60,7 @@ export function SearchResultCard({ result, index, style, onSelect }: SearchResul
           >
             {result.title}
           </CardTitle>
-          <ExternalLink className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-800 transition-colors flex-shrink-0 mt-0.5" />
+          <ExternalLink className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-800 transition-colors transition-opacity duration-300 hover:opacity-70 flex-shrink-0 mt-0.5" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] text-slate-600 truncate">

@@ -56,6 +56,9 @@ export function PromptWindowsStack({
           const peekHeight = 60;
           // Negative offset lifts cards below upward by 10px increments
           const liftOffset = -depth * elevationPerCard;
+          // Calculate nested dialog scale
+          const nestedScale = 1 - 0.1 * depth;
+          const nestedTranslate = -depth * 1.25;
           
           return (
             <div
@@ -69,6 +72,7 @@ export function PromptWindowsStack({
                 transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                 height: depth === 0 ? "auto" : `${peekHeight}px`,
                 overflow: depth === 0 ? "visible" : "hidden",
+                willChange: "transform, opacity",
               }}
               onClick={(e) => {
                 // Click on the visible top portion of cards below to bring them to front
@@ -89,8 +93,10 @@ export function PromptWindowsStack({
                 style={{
                   opacity: depth === 0 ? 1 : 0.5,
                   filter: depth === 0 ? "none" : "blur(0.5px)",
+                  transform: `scale(${nestedScale}) translateY(${nestedTranslate}rem)`,
                   transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                   pointerEvents: depth === 0 ? "auto" : "none",
+                  willChange: "transform, opacity, filter",
                 }}
               >
                 <PromptWindowCard

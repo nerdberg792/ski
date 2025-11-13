@@ -24,13 +24,19 @@ export function ChatInputBar({
   inputRef,
   onNewChat,
 }: ChatInputBarProps) {
+  const hasText = inputValue.trim().length > 0;
+  const isCollapsed = !isExpanded;
+  
   return (
-    <div className="flex flex-1 items-center gap-2 min-w-0">
+    <div className={cn(
+      "flex items-center transition-all duration-300 min-w-0",
+      isCollapsed ? "gap-5 flex-shrink-0" : hasText ? "gap-0 flex-1" : "gap-2 flex-1"
+    )}>
       <form
         onSubmit={onSubmit}
         className={cn(
-          "flex flex-1 items-center gap-0 rounded-2xl py-2 relative overflow-hidden min-w-0",
-          isExpanded ? "pl-2 pr-0.5" : "pl-3 pr-0"
+          "flex items-center gap-0 rounded-2xl relative overflow-hidden transition-all duration-300 flex-shrink-0",
+          isExpanded ? "pl-2 pr-0.5 py-2" : "pl-1.5 pr-0 py-1.5"
         )}
         style={{ 
           WebkitAppRegion: "no-drag",
@@ -54,8 +60,15 @@ export function ChatInputBar({
           }}
           placeholder=""
           className={cn(
-            "bg-transparent border-none outline-none text-white text-base py-0 placeholder-glass min-w-0",
-            isExpanded ? "flex-1 pr-1" : "flex-1 pr-0"
+            "bg-transparent border-none outline-none text-white text-base py-0 placeholder-glass",
+            isExpanded 
+              ? inputValue.trim() 
+                ? "w-auto min-w-[80px] max-w-[300px] pr-1" 
+                : "w-[80px] pr-1"
+              : inputValue.trim() 
+                ? "w-auto min-w-[60px] pr-0" 
+                : "w-[60px]",
+            "transition-all duration-300 ease-in-out"
           )}
           style={{
             textShadow: "-0.1px -0.1px 0 white, 0.1px -0.1px 0 white, -0.1px 0.1px 0 white, 0.1px 0.1px 0 white, -0.1px 0 0 white, 0.1px 0 0 white, 0 -0.1px 0 white, 0 0.1px 0 white",
@@ -65,7 +78,7 @@ export function ChatInputBar({
         {isExpanded ? (
           <button
             onClick={onCollapse}
-            className="rounded-lg p-1 text-white/60 transition-colors hover:bg-white/10 hover:text-white/90 flex-shrink-0"
+            className="rounded-lg p-1 text-white/60 transition-opacity transition-colors hover:bg-white/10 hover:text-white/90 hover:opacity-100 opacity-72 flex-shrink-0"
             style={{ 
               WebkitAppRegion: "no-drag",
               textShadow: "0 0 20px rgba(244, 114, 182, 0.8), 0 0 10px rgba(244, 114, 182, 0.6), 0 0 5px rgba(244, 114, 182, 0.4)",
@@ -83,9 +96,11 @@ export function ChatInputBar({
         ) : (
           <button
             onClick={onExpand}
-            className="rounded-lg p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white/90 flex-shrink-0 ml-0.5"
+            className="rounded-lg text-white/60 transition-opacity transition-colors hover:bg-white/10 hover:text-white/90 hover:opacity-100 opacity-72 flex-shrink-0"
             style={{ 
               WebkitAppRegion: "no-drag",
+              padding: "4px",
+              paddingRight: "2px",
               textShadow: "0 0 20px rgba(244, 114, 182, 0.8), 0 0 10px rgba(244, 114, 182, 0.6), 0 0 5px rgba(244, 114, 182, 0.4)",
               filter: "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))",
             } as React.CSSProperties}
@@ -102,11 +117,14 @@ export function ChatInputBar({
       </form>
       
       {/* Action buttons: Attach, Settings, New Chat */}
-      <div className="flex items-center gap-2 flex-shrink-0 overflow-visible">
+      {!hasText && (
+        <div 
+          className="flex items-center gap-2 flex-shrink-0 overflow-visible transition-all duration-300"
+        >
         {/* Attach button with dropdown */}
         <button
           type="button"
-          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all"
+          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70"
           style={{
             WebkitAppRegion: "no-drag",
             borderRadius: "40px",
@@ -116,9 +134,10 @@ export function ChatInputBar({
             backdropFilter: "blur(20px) saturate(180%)",
             WebkitBackdropFilter: "blur(20px) saturate(180%)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 8px rgba(255, 105, 180, 0.15), 0 0 4px rgba(255, 20, 147, 0.1)",
+            boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
             color: "rgba(255, 192, 203, 0.95)",
-            textShadow: "0 0 8px rgba(255, 192, 203, 0.5)",
+            textShadow: "0 0 10px rgba(255, 192, 203, 0.8), 0 0 20px rgba(244, 114, 182, 0.6), 0 0 30px rgba(244, 114, 182, 0.4)",
+            filter: "drop-shadow(0 0 8px rgba(244, 114, 182, 0.5))",
           } as React.CSSProperties}
         >
           <Paperclip className="h-4 w-4" />
@@ -130,7 +149,7 @@ export function ChatInputBar({
         {/* Settings button */}
         <button
           type="button"
-          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all"
+          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70"
           style={{
             WebkitAppRegion: "no-drag",
             borderRadius: "40px",
@@ -140,9 +159,10 @@ export function ChatInputBar({
             backdropFilter: "blur(20px) saturate(180%)",
             WebkitBackdropFilter: "blur(20px) saturate(180%)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 8px rgba(255, 105, 180, 0.15), 0 0 4px rgba(255, 20, 147, 0.1)",
+            boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
             color: "rgba(255, 192, 203, 0.95)",
-            textShadow: "0 0 8px rgba(255, 192, 203, 0.5)",
+            textShadow: "0 0 10px rgba(255, 192, 203, 0.8), 0 0 20px rgba(244, 114, 182, 0.6), 0 0 30px rgba(244, 114, 182, 0.4)",
+            filter: "drop-shadow(0 0 8px rgba(244, 114, 182, 0.5))",
           } as React.CSSProperties}
         >
           <Settings className="h-4 w-4" />
@@ -154,7 +174,7 @@ export function ChatInputBar({
           <button
             type="button"
             onClick={onNewChat}
-            className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70"
             style={{
               WebkitAppRegion: "no-drag",
               borderRadius: "40px",
@@ -164,16 +184,18 @@ export function ChatInputBar({
               backdropFilter: "blur(20px) saturate(180%)",
               WebkitBackdropFilter: "blur(20px) saturate(180%)",
               border: "1px solid rgba(255, 255, 255, 0.3)",
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 8px rgba(255, 105, 180, 0.15), 0 0 4px rgba(255, 20, 147, 0.1)",
+              boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
               color: "rgba(255, 192, 203, 0.95)",
-              textShadow: "0 0 8px rgba(255, 192, 203, 0.5)",
+              textShadow: "0 0 10px rgba(255, 192, 203, 0.8), 0 0 20px rgba(244, 114, 182, 0.6), 0 0 30px rgba(244, 114, 182, 0.4)",
+              filter: "drop-shadow(0 0 8px rgba(244, 114, 182, 0.5))",
             } as React.CSSProperties}
           >
             <CheckCircle2 className="h-4 w-4" />
             <span>New Chat</span>
           </button>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@
 
 :root {
   color-scheme: dark;
+  --nested-dialogs: 0;
 }
 
 html,
@@ -60,6 +61,33 @@ body {
   }
   100% {
     background-position: 0% 50%;
+  }
+}
+
+/* Dialog animation utilities */
+@layer utilities {
+  .dialog-backdrop {
+    @apply fixed inset-0 z-50 bg-transparent backdrop-blur-sm transition-all duration-200;
+  }
+  
+  .dialog-backdrop[data-ending-style] {
+    @apply opacity-0;
+  }
+  
+  .dialog-backdrop[data-starting-style] {
+    @apply opacity-0;
+  }
+  
+  .dialog-content {
+    @apply transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform;
+  }
+  
+  .dialog-content[data-ending-style] {
+    @apply opacity-0 scale-98;
+  }
+  
+  .dialog-content[data-starting-style] {
+    @apply opacity-0 scale-98;
   }
 }
 

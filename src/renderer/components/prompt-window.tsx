@@ -4,6 +4,7 @@ import type { ChatEntry, PromptWindow } from "@/types/chat";
 import { useAutoHeight } from "@/hooks/useAutoHeight";
 import { PromptInputBox } from "@/components/prompt-input-box";
 import { cn } from "@/lib/utils";
+import { useEffect, useState, useRef } from "react";
 
 interface PromptWindowProps {
   win: PromptWindow;
@@ -35,16 +36,107 @@ export function PromptWindow({
   inputRef,
   showInput = false,
 }: PromptWindowProps) {
-  const { containerRef, contentRef, containerStyle } = useAutoHeight(500);
+  const { containerRef, contentRef } = useAutoHeight(500);
+  const [isAnimating, setIsAnimating] = useState(true);
+  const [maxContentHeight, setMaxContentHeight] = useState<number | null>(null);
+  const [containerHeight, setContainerHeight] = useState<number | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const inputBoxRef = useRef<HTMLDivElement>(null);
+  const isStreaming = win.status === "streaming";
+
+  useEffect(() => {
+    // Trigger entrance animation
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setIsAnimating(false);
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    let resizeTimeout: NodeJS.Timeout | null = null;
+    
+    const updateDimensions = () => {
+      if (!containerRef.current || !headerRef.current || !contentRef.current) return;
+
+      const viewportHeight = window.innerHeight;
+      const containerTop = containerRef.current.getBoundingClientRect().top;
+      const headerHeight = headerRef.current.getBoundingClientRect().height;
+      const inputBoxHeight = inputBoxRef.current?.getBoundingClientRect().height || (showInput ? 60 : 0);
+      const padding = 40; // Top and bottom padding/margins
+      
+      // Calculate available space for the entire card
+      const maxAvailableHeight = viewportHeight - containerTop - padding;
+      
+      // Calculate natural content height (header + content + input)
+      // Use scrollHeight to get the natural content height regardless of current constraints
+      // This gives us the true height the content wants to be
+      const contentNaturalHeight = contentRef.current.scrollHeight;
+      const naturalTotalHeight = headerHeight + contentNaturalHeight + inputBoxHeight;
+      
+      // Calculate available height for content section
+      const availableContentHeight = maxAvailableHeight - headerHeight - inputBoxHeight;
+      
+      // If natural height fits within viewport, use natural height and no scrolling
+      if (naturalTotalHeight <= maxAvailableHeight) {
+        setContainerHeight(naturalTotalHeight);
+        setMaxContentHeight(null);
+      } else {
+        // If natural height exceeds viewport, constrain container and enable scrolling
+        setContainerHeight(maxAvailableHeight);
+        if (availableContentHeight > 200) {
+          setMaxContentHeight(availableContentHeight);
+        } else {
+          setMaxContentHeight(200); // Minimum content height when scrolling
+        }
+      }
+    };
+
+    const debouncedUpdate = () => {
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(updateDimensions, 50);
+    };
+
+    // Delay to ensure DOM is ready
+    const initialTimeout = setTimeout(updateDimensions, 100);
+    window.addEventListener('resize', debouncedUpdate);
+    const resizeObserver = new ResizeObserver(debouncedUpdate);
+    
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    if (contentRef.current) {
+      resizeObserver.observe(contentRef.current);
+    }
+    if (headerRef.current) {
+      resizeObserver.observe(headerRef.current);
+    }
+    if (inputBoxRef.current) {
+      resizeObserver.observe(inputBoxRef.current);
+    }
+
+    return () => {
+      clearTimeout(initialTimeout);
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      window.removeEventListener('resize', debouncedUpdate);
+      resizeObserver.disconnect();
+    };
+  }, [showInput, win.entries.length]);
 
   return (
     <div
       ref={containerRef}
-      className={cn("pointer-events-auto w-full flex flex-col gap-0", className)}
+      className={cn(
+        "pointer-events-auto w-full flex flex-col gap-0 rounded-xl overflow-hidden",
+        "transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform",
+        isAnimating ? "opacity-0 scale-98" : "opacity-100 scale-100",
+        className
+      )}
       style={{
-        ...containerStyle,
+        height: containerHeight !== null ? `${containerHeight}px` : undefined,
+        transition: "height 200ms ease",
         zIndex,
-        boxShadow: "0 0 20px rgba(255, 105, 180, 0.08), 0 0 40px rgba(255, 20, 147, 0.05), 0 0 60px rgba(255, 105, 180, 0.03)",
+        boxShadow: "0 0 30px rgba(244, 114, 182, 0.25), 0 0 60px rgba(168, 85, 247, 0.15), 0 0 100px rgba(244, 114, 182, 0.1), 0 8px 32px rgba(0, 0, 0, 0.12)",
       }}
       onDragOver={(e) => {
         e.preventDefault();
@@ -63,7 +155,7 @@ export function PromptWindow({
       }}
     >
       <Card
-        className="w-full rounded-xl overflow-hidden p-0"
+        className="w-full rounded-xl overflow-hidden p-0 flex flex-col flex-1 min-h-0"
         style={{
           background: "transparent",
           backdropFilter: "none",
@@ -82,18 +174,20 @@ export function PromptWindow({
       >
         {/* Conversation header with function name in a pill */}
         <div 
-          className="px-5 pt-4 pb-3 relative"
+          ref={headerRef}
+          className="px-5 pt-4 pb-3 relative transition-all duration-200 flex-shrink-0"
           style={{
-            background: "rgba(255, 255, 255, 0.6)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
+            background: "rgba(255, 245, 250, 0.98)",
+            backdropFilter: "blur(40px) saturate(200%)",
+            WebkitBackdropFilter: "blur(40px) saturate(200%)",
+            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.2)",
           }}
         >
           <div className="flex items-center justify-between mb-3">
             <div 
               className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-800"
               style={{
-                background: "rgba(255, 255, 255, 0.95)",
+                background: "rgba(255, 255, 255, 1)",
                 boxShadow: "0 2px 8px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9)",
               }}
             >
@@ -103,13 +197,13 @@ export function PromptWindow({
               <button
                 type="button"
                 onClick={() => onClose(win.id)}
-                className="rounded-lg border border-slate-200/50 bg-white/40 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-white/60 transition-colors"
+                className="rounded-lg border border-slate-200/50 bg-white/40 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-white/60 hover:opacity-100 opacity-72 transition-opacity transition-colors"
               >
                 Close
               </button>
             ) : null}
           </div>
-          <CardTitle className="text-slate-900 text-base font-medium leading-tight">
+          <CardTitle className="text-slate-900 text-base font-semibold leading-tight" style={{ color: "rgb(15, 23, 42)" }}>
             {win.prompt}
           </CardTitle>
         </div>
@@ -117,12 +211,19 @@ export function PromptWindow({
         {/* Response section with different transparency */}
         <CardContent 
           ref={contentRef as unknown as React.Ref<HTMLDivElement>}
-          className="min-h-[300px] px-5 py-4"
+          className={cn(
+            "px-5 py-4 transition-all duration-200",
+            maxContentHeight !== null ? "overflow-y-auto scrollbar-thin scrollbar-thumb-pink-300/30 scrollbar-track-transparent flex-1" : "flex-shrink-0"
+          )}
           style={{
-            background: "rgba(255, 255, 255, 0.75)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-          }}
+            background: "rgba(255, 248, 252, 0.98)",
+            backdropFilter: "blur(40px) saturate(200%)",
+            WebkitBackdropFilter: "blur(40px) saturate(200%)",
+            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+            maxHeight: maxContentHeight !== null ? `${maxContentHeight}px` : undefined,
+            scrollbarWidth: maxContentHeight !== null ? "thin" : undefined,
+            scrollbarColor: maxContentHeight !== null ? "rgba(244, 114, 182, 0.3) transparent" : undefined,
+          } as React.CSSProperties}
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -136,28 +237,32 @@ export function PromptWindow({
             {win.entries
               .filter((e) => e.kind !== "prompt")
               .map((entry) => (
-                <EntryBlock key={entry.id} entry={entry} />
+                <EntryBlock key={entry.id} entry={entry} winStatus={win.status} />
               ))}
           </div>
         </CardContent>
       </Card>
       {/* Input box below response card - no gap, blends seamlessly */}
       {showInput && inputValue !== undefined && onInputChange && onSubmit ? (
-        <PromptInputBox
-          inputValue={inputValue}
-          onInputChange={onInputChange}
-          onSubmit={onSubmit}
-          isProcessing={isProcessing}
-          onCollapse={onCollapse}
-          onNewChat={onNewChat}
-          inputRef={inputRef}
-        />
+        <div ref={inputBoxRef} className="flex-shrink-0">
+          <PromptInputBox
+            inputValue={inputValue}
+            onInputChange={onInputChange}
+            onSubmit={onSubmit}
+            isProcessing={isProcessing}
+            onCollapse={onCollapse}
+            onNewChat={onNewChat}
+            inputRef={inputRef}
+          />
+        </div>
       ) : null}
     </div>
   );
 }
 
-function EntryBlock({ entry }: { entry: ChatEntry }) {
+function EntryBlock({ entry, winStatus }: { entry: ChatEntry; winStatus?: PromptWindow["status"] }) {
+  const isStreaming = winStatus === "streaming";
+  
   return (
     <div className="flex flex-col gap-3">
       {entry.sourceLabel && (
@@ -168,24 +273,27 @@ function EntryBlock({ entry }: { entry: ChatEntry }) {
         </div>
       )}
       {entry.heading ? (
-        <div className="text-slate-900 font-semibold text-base leading-snug">
+        <div className="font-semibold text-base leading-snug" style={{ color: "rgb(15, 23, 42)" }}>
           {entry.heading}
         </div>
       ) : null}
       {entry.body ? (
-        <p className="text-slate-700 leading-relaxed text-[15px]">
+        <p className={cn(
+          "leading-relaxed text-[15px]",
+          isStreaming && "animate-pulse"
+        )} style={{ color: "rgb(30, 41, 59)" }}>
           {entry.body}
         </p>
       ) : null}
       {entry.bullets ? (
-        <ul className="list-disc pl-5 space-y-1.5 text-slate-700 text-[15px] leading-relaxed">
+        <ul className="list-disc pl-5 space-y-1.5 text-[15px] leading-relaxed" style={{ color: "rgb(30, 41, 59)" }}>
           {entry.bullets.map((b, i) => (
             <li key={i}>{b}</li>
           ))}
         </ul>
       ) : null}
       {entry.footnote ? (
-        <p className="text-xs text-slate-500 mt-2">{entry.footnote}</p>
+        <p className="text-xs mt-2" style={{ color: "rgb(100, 116, 139)" }}>{entry.footnote}</p>
       ) : null}
     </div>
   );
