@@ -1,11 +1,14 @@
 import { PromptWindow } from "@/types/chat";
 import { PromptWindow as PromptWindowCard } from "@/components/prompt-window";
 import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface PromptWindowsStackProps {
   windows: PromptWindow[];
   onClose?: (id: string) => void;
   onBringToFront?: (id: string) => void;
+  onRevealCard?: (id: string) => void;
+  revealedCardId?: string | null;
   className?: string;
   // Input props - only used for top window
   inputValue?: string;
@@ -21,6 +24,8 @@ export function PromptWindowsStack({
   windows,
   onClose,
   onBringToFront,
+  onRevealCard,
+  revealedCardId,
   className,
   inputValue,
   onInputChange,
@@ -30,7 +35,7 @@ export function PromptWindowsStack({
   onNewChat,
   inputRef,
 }: PromptWindowsStackProps) {
-  // Newest first for rendering so transforms rely on index
+  // Newest first for rendering
   const ordered = [...windows].sort((a, b) => b.createdAt - a.createdAt);
 
   return (
@@ -41,84 +46,122 @@ export function PromptWindowsStack({
       )}
       aria-hidden={ordered.length === 0}
     >
-      <div
-        className="mt-10 w-[min(720px,95vw)] relative"
+      <motion.div
+        className="w-[min(720px,95vw)] relative"
         style={{
-          transform: "translateZ(0)",
+          perspective: "1000px",
+          perspectiveOrigin: "center center",
+        }}
+        initial={{ marginTop: 20 }}
+        animate={{
+          marginTop: revealedCardId ? 20 : 20, // Keep consistent for now
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 300,
+          damping: 30,
         }}
       >
-        {ordered.map((win, index) => {
-          const depth = index;
-          const isTopWindow = depth === 0;
-          // Each card below is elevated by 10px more than the previous
-          const elevationPerCard = 20;
-          // Show enough of the header to be clickable (about 60px)
-          const peekHeight = 60;
-          // Negative offset lifts cards below upward by 10px increments
-          const liftOffset = -depth * elevationPerCard;
-          // Calculate nested dialog scale
-          const nestedScale = 1 - 0.1 * depth;
-          const nestedTranslate = -depth * 1.25;
-          
-          return (
-            <div
-              key={win.id}
-              className="absolute left-0 right-0"
-              style={{
-                top: `${liftOffset}px`,
-                zIndex: 100 + (ordered.length - index),
-                pointerEvents: "auto",
-                cursor: depth === 0 ? "default" : "pointer",
-                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                height: depth === 0 ? "auto" : `${peekHeight}px`,
-                overflow: depth === 0 ? "visible" : "hidden",
-                willChange: "transform, opacity",
-              }}
-              onClick={(e) => {
-                // Click on the visible top portion of cards below to bring them to front
-                if (depth > 0 && onBringToFront) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onBringToFront(win.id);
-                }
-              }}
-              onMouseDown={(e) => {
-                // Also handle mousedown to ensure clicks are captured
-                if (depth > 0 && onBringToFront) {
-                  e.stopPropagation();
-                }
-              }}
-            >
-              <div
+        <AnimatePresence mode="sync">
+          {ordered.map((win, index) => {
+            const depth = index;
+            const isTopWindow = depth === 0;
+            const isRevealed = revealedCardId === win.id;
+            const elevationPerCard = 20;
+            const peekHeight = 60;
+
+            // Calculate positions
+            const baseOffset = -depth * elevationPerCard;
+            
+            return (
+              <motion.div
+                key={win.id}
+                className="absolute left-0 right-0"
+                layout
+                initial={{
+                  top: baseOffset,
+                  zIndex: 100 + (ordered.length - index),
+                  scale: 1 - 0.02 * depth,
+                  opacity: isTopWindow ? 1 : 0.7,
+                }}
+                animate={{
+                  top: baseOffset,
+                  // Move cards ABOVE revealed card DOWN and OUT of viewport
+                  y: revealedCardId && depth < ordered.findIndex(w => w.id === revealedCardId)
+                    ? 800 // Move down 800px to push out of viewport
+                    : 0,
+                  zIndex: 100 + (ordered.length - index),
+                  scale: isRevealed ? 1 : 1 - 0.02 * depth,
+                  opacity: isTopWindow || isRevealed ? 1 : 0.5,
+                }}
+                transition={{
+                  type: "spring",
+                  stiffness: 300,
+                  damping: 30,
+                  mass: 0.8,
+                }}
                 style={{
-                  opacity: depth === 0 ? 1 : 0.5,
-                  filter: depth === 0 ? "none" : "blur(0.5px)",
-                  transform: `scale(${nestedScale}) translateY(${nestedTranslate}rem)`,
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                  pointerEvents: depth === 0 ? "auto" : "none",
-                  willChange: "transform, opacity, filter",
+                  pointerEvents: "auto",
+                  cursor: depth === 0 || isRevealed ? "default" : "pointer",
+                  height: depth === 0 || isRevealed ? "auto" : `${peekHeight}px`,
+                  overflow: depth === 0 || isRevealed ? "visible" : "hidden",
+                  transformStyle: "preserve-3d",
+                }}
+                onClick={(e) => {
+                  if (depth > 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (isRevealed && onBringToFront) {
+                      // Second click: zoom and bring to front
+                      onBringToFront(win.id);
+                    } else if (!isRevealed && onRevealCard) {
+                      // First click: reveal the card
+                      onRevealCard(win.id);
+                    }
+                  }
+                }}
+                onMouseDown={(e) => {
+                  if (depth > 0) {
+                    e.stopPropagation();
+                  }
                 }}
               >
-                <PromptWindowCard
-                  win={win}
-                  zIndex={100 + (ordered.length - index)}
-                  onClose={onClose}
-                  showInput={isTopWindow}
-                  inputValue={isTopWindow ? inputValue : undefined}
-                  onInputChange={isTopWindow ? onInputChange : undefined}
-                  onSubmit={isTopWindow ? onSubmit : undefined}
-                isProcessing={isTopWindow ? isProcessing : undefined}
-                onCollapse={isTopWindow ? onCollapse : undefined}
-                onNewChat={isTopWindow ? onNewChat : undefined}
-                inputRef={isTopWindow ? inputRef : undefined}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                <motion.div
+                  animate={{
+                    filter: depth === 0 || isRevealed ? "none" : "blur(0.5px)",
+                    scale: isRevealed ? 1 : 1 - 0.05 * depth,
+                  }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 25,
+                  }}
+                  style={{
+                    pointerEvents: depth === 0 || isRevealed ? "auto" : "none",
+                    transformStyle: "preserve-3d",
+                    backfaceVisibility: "hidden",
+                  }}
+                >
+                  <PromptWindowCard
+                    win={win}
+                    zIndex={100 + (ordered.length - index)}
+                    onClose={onClose}
+                    showInput={isTopWindow}
+                    inputValue={isTopWindow ? inputValue : undefined}
+                    onInputChange={isTopWindow ? onInputChange : undefined}
+                    onSubmit={isTopWindow ? onSubmit : undefined}
+                    isProcessing={isTopWindow ? isProcessing : undefined}
+                    onCollapse={isTopWindow ? onCollapse : undefined}
+                    onNewChat={isTopWindow ? onNewChat : undefined}
+                    inputRef={isTopWindow ? inputRef : undefined}
+                  />
+                </motion.div>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }
-
-

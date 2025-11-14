@@ -23,6 +23,7 @@ export default function App() {
   const [isExpanding, setIsExpanding] = useState(false);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [promptWindows, setPromptWindows] = useState<PromptWindow[]>([]);
+  const [revealedCardId, setRevealedCardId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -279,6 +280,7 @@ export default function App() {
   const handleNewChat = () => {
     setPromptWindows([]);
     setInputValue("");
+    setRevealedCardId(null);
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
@@ -290,6 +292,7 @@ export default function App() {
   const handleCollapse = () => {
     sky?.collapse();
     setIsExpanded(false);
+    setRevealedCardId(null);
   };
 
   if (!isExpanded) {
@@ -334,24 +337,33 @@ export default function App() {
       {/* Floating prompt windows stack - always render on top when expanded */}
       <PromptWindowsStack
         windows={promptWindows}
-        onClose={(id) =>
-          setPromptWindows((prev) => prev.filter((w) => w.id !== id))
-        }
+        onClose={(id) => {
+          setPromptWindows((prev) => prev.filter((w) => w.id !== id));
+          if (revealedCardId === id) {
+            setRevealedCardId(null);
+          }
+        }}
+        onRevealCard={(id) => {
+          setRevealedCardId(id);
+        }}
+        revealedCardId={revealedCardId}
         onBringToFront={(id) => {
           setPromptWindows((prev) =>
             prev.map((w) =>
               w.id === id ? { ...w, createdAt: Date.now() } : w
             )
           );
+          // Clear revealed state when bringing to front
+          setRevealedCardId(null);
         }}
-              inputValue={inputValue}
-              onInputChange={setInputValue}
-              onSubmit={handleSubmit}
-              isProcessing={isProcessing}
-              onCollapse={handleCollapse}
+        inputValue={inputValue}
+        onInputChange={setInputValue}
+        onSubmit={handleSubmit}
+        isProcessing={isProcessing}
+        onCollapse={handleCollapse}
         onNewChat={handleNewChat}
-              inputRef={inputRef}
-            />
+        inputRef={inputRef}
+      />
       {/* Underlying expanded content removed per new flow to keep focus on stacked windows */}
     </div>
   );

@@ -63,10 +63,10 @@ export function PromptWindow({
       const containerTop = containerRef.current.getBoundingClientRect().top;
       const headerHeight = headerRef.current.getBoundingClientRect().height;
       const inputBoxHeight = inputBoxRef.current?.getBoundingClientRect().height || (showInput ? 60 : 0);
-      const padding = 40; // Top and bottom padding/margins
       
-      // Calculate available space for the entire card
-      const maxAvailableHeight = viewportHeight - containerTop - padding;
+      // Use minimal padding from top since we want card to stick to top for long content
+      const topPadding = 20; // Minimal top padding
+      const bottomPadding = 20; // Bottom padding
       
       // Calculate natural content height (header + content + input)
       // Use scrollHeight to get the natural content height regardless of current constraints
@@ -74,16 +74,19 @@ export function PromptWindow({
       const contentNaturalHeight = contentRef.current.scrollHeight;
       const naturalTotalHeight = headerHeight + contentNaturalHeight + inputBoxHeight;
       
-      // Calculate available height for content section
-      const availableContentHeight = maxAvailableHeight - headerHeight - inputBoxHeight;
+      // Calculate max available height from top of viewport (allowing card to grow downward)
+      // This ensures the top of the card stays fixed and only the bottom grows
+      const maxHeightFromTop = viewportHeight - topPadding - bottomPadding;
       
       // If natural height fits within viewport, use natural height and no scrolling
-      if (naturalTotalHeight <= maxAvailableHeight) {
+      if (naturalTotalHeight <= maxHeightFromTop) {
         setContainerHeight(naturalTotalHeight);
         setMaxContentHeight(null);
       } else {
-        // If natural height exceeds viewport, constrain container and enable scrolling
-        setContainerHeight(maxAvailableHeight);
+        // If natural height exceeds viewport, constrain container to viewport height
+        // and enable scrolling within the content area
+        setContainerHeight(maxHeightFromTop);
+        const availableContentHeight = maxHeightFromTop - headerHeight - inputBoxHeight;
         if (availableContentHeight > 200) {
           setMaxContentHeight(availableContentHeight);
         } else {
