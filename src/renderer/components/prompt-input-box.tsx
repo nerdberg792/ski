@@ -1,6 +1,7 @@
 import { ChatInputBar } from "@/components/chat-input-bar";
 import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 interface PromptInputBoxProps {
   inputValue: string;
@@ -24,6 +25,7 @@ export function PromptInputBox({
   className,
 }: PromptInputBoxProps) {
   const hasText = inputValue.trim().length > 0;
+  const [isInputVisible, setIsInputVisible] = useState(false);
   
   return (
     <div
@@ -36,7 +38,22 @@ export function PromptInputBox({
         transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
       } as React.CSSProperties}
     >
-      <Logo isExpanded={true} />
+      <div 
+        onClick={() => {
+          // Toggle input: if visible, blur it; if hidden, focus it
+          if (inputRef && 'current' in inputRef && inputRef.current) {
+            if (isInputVisible) {
+              inputRef.current.blur();
+            } else {
+              inputRef.current.focus();
+            }
+          }
+        }}
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        className="cursor-pointer"
+      >
+        <Logo isExpanded={true} />
+      </div>
       <ChatInputBar
         inputValue={inputValue}
         onInputChange={onInputChange}
@@ -46,6 +63,7 @@ export function PromptInputBox({
         onNewChat={onNewChat}
         isExpanded={true}
         inputRef={inputRef}
+        onInputVisibilityChange={setIsInputVisible}
       />
     </div>
   );

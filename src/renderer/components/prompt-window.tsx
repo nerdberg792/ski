@@ -20,6 +20,8 @@ interface PromptWindowProps {
   onNewChat?: () => void;
   inputRef?: React.Ref<HTMLInputElement>;
   showInput?: boolean;
+  maxHeight?: number; // Maximum height constraint for revealed cards
+  isStacked?: boolean; // Whether this card is in the stack (not top card)
 }
 
 export function PromptWindow({ 
@@ -35,6 +37,8 @@ export function PromptWindow({
   onNewChat,
   inputRef,
   showInput = false,
+  maxHeight,
+  isStacked = false,
 }: PromptWindowProps) {
   const { containerRef, contentRef } = useAutoHeight(500);
   const [isAnimating, setIsAnimating] = useState(true);
@@ -74,16 +78,20 @@ export function PromptWindow({
       const contentNaturalHeight = contentRef.current.scrollHeight;
       const naturalTotalHeight = headerHeight + contentNaturalHeight + inputBoxHeight;
       
-      // Calculate max available height from top of viewport (allowing card to grow downward)
-      // This ensures the top of the card stays fixed and only the bottom grows
-      const maxHeightFromTop = viewportHeight - topPadding - bottomPadding;
+      // Calculate max available height
+      let maxHeightFromTop = viewportHeight - topPadding - bottomPadding;
       
-      // If natural height fits within viewport, use natural height and no scrolling
+      // If maxHeight is provided (for revealed cards), use it as the constraint
+      if (maxHeight !== undefined && maxHeight < maxHeightFromTop) {
+        maxHeightFromTop = maxHeight;
+      }
+      
+      // If natural height fits within available space, use natural height and no scrolling
       if (naturalTotalHeight <= maxHeightFromTop) {
         setContainerHeight(naturalTotalHeight);
         setMaxContentHeight(null);
       } else {
-        // If natural height exceeds viewport, constrain container to viewport height
+        // If natural height exceeds available space, constrain container
         // and enable scrolling within the content area
         setContainerHeight(maxHeightFromTop);
         const availableContentHeight = maxHeightFromTop - headerHeight - inputBoxHeight;
@@ -124,7 +132,7 @@ export function PromptWindow({
       window.removeEventListener('resize', debouncedUpdate);
       resizeObserver.disconnect();
     };
-  }, [showInput, win.entries.length]);
+  }, [showInput, win.entries.length, maxHeight]);
 
   return (
     <div
@@ -137,10 +145,11 @@ export function PromptWindow({
       )}
       style={{
         height: containerHeight !== null ? `${containerHeight}px` : undefined,
-        transitionDuration: isAnimating ? "0ms" : "350ms",
+        transitionDuration: isAnimating ? "0ms" : "200ms",
         transitionTimingFunction: "cubic-bezier(0.25, 0.1, 0.25, 1.0)",
         zIndex,
-        boxShadow: "0 0 30px rgba(244, 114, 182, 0.25), 0 0 60px rgba(168, 85, 247, 0.15), 0 0 100px rgba(244, 114, 182, 0.1), 0 8px 32px rgba(0, 0, 0, 0.12)",
+        boxShadow: "0 0 50px rgba(0, 0, 0, 0.10), 0 0 100px rgba(0, 0, 0, 0.06), 0 0 150px rgba(0, 0, 0, 0.04), 0 8px 32px rgba(0, 0, 0, 0.08)",
+        filter: "drop-shadow(0 0 2px rgba(255, 255, 255, 0.5))",
       }}
       onDragOver={(e) => {
         e.preventDefault();
@@ -165,6 +174,7 @@ export function PromptWindow({
           backdropFilter: "none",
           WebkitBackdropFilter: "none",
           border: "none",
+          borderBottom: isStacked ? "2px solid transparent" : "none",
           boxShadow: "none",
         }}
         onDragOver={(e) => {
@@ -181,19 +191,21 @@ export function PromptWindow({
           ref={headerRef}
           className="px-5 pt-4 pb-3 relative flex-shrink-0"
           style={{
-            background: "rgba(255, 245, 250, 0.98)",
-            backdropFilter: "blur(40px) saturate(200%)",
-            WebkitBackdropFilter: "blur(40px) saturate(200%)",
-            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.2)",
-            transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+            background: "linear-gradient(to bottom, rgba(255, 255, 255, 0.98) 0%, rgba(250, 250, 250, 0.95) 50%, rgba(248, 248, 248, 0.92) 100%)",
+            backdropFilter: "blur(60px) saturate(120%)",
+            WebkitBackdropFilter: "blur(60px) saturate(120%)",
+            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.03)",
+            transition: "all 200ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
           }}
         >
           <div className="flex items-center justify-between mb-3">
             <div 
               className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-800"
               style={{
-                background: "rgba(255, 255, 255, 1)",
-                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9)",
+                background: "rgba(255, 255, 255, 0.92)",
+                backdropFilter: "blur(30px)",
+                WebkitBackdropFilter: "blur(30px)",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.03)",
               }}
             >
               {win.entries.find(e => e.kind === "response")?.sourceLabel ?? "Sky"}
@@ -221,14 +233,14 @@ export function PromptWindow({
             maxContentHeight !== null ? "overflow-y-auto scrollbar-thin scrollbar-thumb-pink-300/30 scrollbar-track-transparent flex-1" : "flex-shrink-0"
           )}
           style={{
-            background: "rgba(255, 248, 252, 0.98)",
-            backdropFilter: "blur(40px) saturate(200%)",
-            WebkitBackdropFilter: "blur(40px) saturate(200%)",
-            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+            background: "linear-gradient(to bottom, rgba(252, 252, 252, 0.95) 0%, rgba(248, 248, 248, 0.88) 40%, rgba(245, 245, 245, 0.80) 100%)",
+            backdropFilter: "blur(60px) saturate(120%)",
+            WebkitBackdropFilter: "blur(60px) saturate(120%)",
+            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.4)",
             maxHeight: maxContentHeight !== null ? `${maxContentHeight}px` : undefined,
             scrollbarWidth: maxContentHeight !== null ? "thin" : undefined,
-            scrollbarColor: maxContentHeight !== null ? "rgba(244, 114, 182, 0.3) transparent" : undefined,
-            transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+            scrollbarColor: maxContentHeight !== null ? "rgba(120, 120, 120, 0.25) transparent" : undefined,
+            transition: "all 200ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
           } as React.CSSProperties}
           onDragOver={(e) => {
             e.preventDefault();
@@ -271,7 +283,7 @@ function EntryBlock({ entry, winStatus }: { entry: ChatEntry; winStatus?: Prompt
   
   return (
     <div className="flex flex-col gap-3" style={{ 
-      transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+      transition: "all 200ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
     }}>
       {entry.sourceLabel && (
         <div className="flex items-center gap-2">

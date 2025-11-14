@@ -26,12 +26,12 @@ export function Toolbar({ searchEnabled, onToggleSearch, onNewChat }: ToolbarPro
         onClick={onToggleSearch}
         style={{
           background: searchEnabled 
-            ? "rgba(51, 65, 85, 0.5)" 
-            : "rgba(15, 23, 42, 0.4)",
-          backdropFilter: "blur(20px) saturate(180%)",
-          WebkitBackdropFilter: "blur(20px) saturate(180%)",
-          border: "1px solid rgba(255, 255, 255, 0.1)",
-          boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
+            ? "rgba(51, 65, 85, 0.35)" 
+            : "rgba(15, 23, 42, 0.25)",
+          backdropFilter: "blur(50px) saturate(110%)",
+          WebkitBackdropFilter: "blur(50px) saturate(110%)",
+          border: "1px solid rgba(255, 255, 255, 0.12)",
+          boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 50px rgba(0, 0, 0, 0.1), 0 0 80px rgba(0, 0, 0, 0.05)",
           textShadow: "-0.08px -0.08px 0 white, 0.08px -0.08px 0 white, -0.08px 0.08px 0 white, 0.08px 0.08px 0 white, -0.08px 0 0 white, 0.08px 0 0 white, 0 -0.08px 0 white, 0 0.08px 0 white",
         }}
       >
@@ -48,11 +48,11 @@ export function Toolbar({ searchEnabled, onToggleSearch, onNewChat }: ToolbarPro
           className="gap-2 rounded-full px-3 hover:scale-[1.02] transition-transform"
           size="sm"
           style={{
-            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.2) 0%, rgba(15, 23, 42, 0.4) 60%, rgba(15, 23, 42, 0.3) 100%)",
-            backdropFilter: "blur(20px) saturate(180%)",
-            WebkitBackdropFilter: "blur(20px) saturate(180%)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 2px 4px rgba(255, 255, 255, 0.2), inset 0 -2px 4px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.08)",
+            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.08) 0%, rgba(15, 23, 42, 0.2) 60%, rgba(15, 23, 42, 0.12) 100%)",
+            backdropFilter: "blur(50px) saturate(110%)",
+            WebkitBackdropFilter: "blur(50px) saturate(110%)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.15), inset 0 2px 4px rgba(255, 255, 255, 0.1), inset 0 -2px 4px rgba(0, 0, 0, 0.12), inset 0 0 30px rgba(255, 255, 255, 0.03), 0 0 60px rgba(0, 0, 0, 0.1), 0 0 90px rgba(0, 0, 0, 0.05)",
             textShadow: "-0.08px -0.08px 0 white, 0.08px -0.08px 0 white, -0.08px 0.08px 0 white, 0.08px 0.08px 0 white, -0.08px 0 0 white, 0.08px 0 0 white, 0 -0.08px 0 white, 0 0.08px 0 white",
           }}
         >
@@ -64,11 +64,11 @@ export function Toolbar({ searchEnabled, onToggleSearch, onNewChat }: ToolbarPro
           className="gap-2 rounded-full px-3 hover:scale-[1.02] transition-transform"
           size="sm"
           style={{
-            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.2) 0%, rgba(15, 23, 42, 0.4) 60%, rgba(15, 23, 42, 0.3) 100%)",
-            backdropFilter: "blur(20px) saturate(180%)",
-            WebkitBackdropFilter: "blur(20px) saturate(180%)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 2px 4px rgba(255, 255, 255, 0.2), inset 0 -2px 4px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.08)",
+            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.08) 0%, rgba(15, 23, 42, 0.2) 60%, rgba(15, 23, 42, 0.12) 100%)",
+            backdropFilter: "blur(50px) saturate(110%)",
+            WebkitBackdropFilter: "blur(50px) saturate(110%)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.15), inset 0 2px 4px rgba(255, 255, 255, 0.1), inset 0 -2px 4px rgba(0, 0, 0, 0.12), inset 0 0 30px rgba(255, 255, 255, 0.03), 0 0 60px rgba(0, 0, 0, 0.1), 0 0 90px rgba(0, 0, 0, 0.05)",
             textShadow: "-0.08px -0.08px 0 white, 0.08px -0.08px 0 white, -0.08px 0.08px 0 white, 0.08px 0.08px 0 white, -0.08px 0 0 white, 0.08px 0 0 white, 0 -0.08px 0 white, 0 0.08px 0 white",
           }}
         >
@@ -81,11 +81,11 @@ export function Toolbar({ searchEnabled, onToggleSearch, onNewChat }: ToolbarPro
           size="sm"
           onClick={onNewChat}
           style={{
-            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.3) 0%, rgba(244, 114, 182, 0.6) 40%, rgba(168, 85, 247, 0.6) 70%, rgba(59, 130, 246, 0.6) 100%)",
-            backdropFilter: "blur(20px) saturate(180%)",
-            WebkitBackdropFilter: "blur(20px) saturate(180%)",
-            border: "1px solid rgba(255, 255, 255, 0.2)",
-            boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 2px 4px rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(0, 0, 0, 0.2), inset 0 0 20px rgba(255, 255, 255, 0.1)",
+            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.15) 0%, rgba(200, 200, 200, 0.18) 40%, rgba(150, 150, 150, 0.12) 70%, rgba(120, 120, 120, 0.08) 100%)",
+            backdropFilter: "blur(50px) saturate(110%)",
+            WebkitBackdropFilter: "blur(50px) saturate(110%)",
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.15), inset 0 2px 4px rgba(255, 255, 255, 0.18), inset 0 -2px 4px rgba(0, 0, 0, 0.1), inset 0 0 30px rgba(255, 255, 255, 0.05), 0 0 70px rgba(0, 0, 0, 0.12), 0 0 100px rgba(0, 0, 0, 0.06)",
             textShadow: "-0.08px -0.08px 0 white, 0.08px -0.08px 0 white, -0.08px 0.08px 0 white, 0.08px 0.08px 0 white, -0.08px 0 0 white, 0.08px 0 0 white, 0 -0.08px 0 white, 0 0.08px 0 white",
           }}
         >

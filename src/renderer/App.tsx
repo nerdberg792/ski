@@ -24,6 +24,7 @@ export default function App() {
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [promptWindows, setPromptWindows] = useState<PromptWindow[]>([]);
   const [revealedCardId, setRevealedCardId] = useState<string | null>(null);
+  const [isInputVisible, setIsInputVisible] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -309,7 +310,20 @@ export default function App() {
         } as React.CSSProperties}
       >
         <div className="relative flex h-full w-full items-center gap-1 pl-2 pr-2 py-1 z-10 overflow-hidden" style={{ WebkitAppRegion: "drag" } as React.CSSProperties}>
-          <Logo isExpanded={false} />
+          <div 
+            onClick={() => {
+              // Toggle input: if visible, blur it; if hidden, focus it
+              if (isInputVisible) {
+                inputRef.current?.blur();
+              } else {
+                requestAnimationFrame(() => inputRef.current?.focus());
+              }
+            }}
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            className="cursor-pointer"
+          >
+            <Logo isExpanded={false} />
+          </div>
           <ChatInputBar
             inputValue={inputValue}
             onInputChange={setInputValue}
@@ -318,6 +332,7 @@ export default function App() {
             onExpand={handleExpand}
             isExpanded={false}
             inputRef={inputRef}
+            onInputVisibilityChange={setIsInputVisible}
           />
         </div>
       </div>
@@ -329,8 +344,8 @@ export default function App() {
       className="relative flex h-full w-full flex-col text-white overflow-hidden" 
       style={{ 
         background: "transparent",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
         transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
       }}
     >

@@ -17,7 +17,7 @@ export function Logo({ className, isExpanded = false }: LogoProps) {
           isExpanded ? "h-12" : "h-8"
         )}
         style={{
-          filter: "drop-shadow(0 0 12px rgba(244, 114, 182, 0.9)) drop-shadow(0 0 6px rgba(244, 114, 182, 0.7)) drop-shadow(0 0 3px rgba(244, 114, 182, 0.5)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4))",
+          filter: "drop-shadow(0 0 15px rgba(200, 200, 200, 0.6)) drop-shadow(0 0 25px rgba(180, 180, 180, 0.4)) drop-shadow(0 0 40px rgba(150, 150, 150, 0.2)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))",
         }}
       />
     </div>
