@@ -124,17 +124,17 @@ export function ChatInputBar({
         {/* Attach button with dropdown */}
         <button
           type="button"
-          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70"
+          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70 hover:scale-[1.02]"
           style={{
             WebkitAppRegion: "no-drag",
             borderRadius: "40px",
             paddingTop: "1.5px",
             paddingBottom: "1.5px",
-            background: "rgba(255, 255, 255, 0.15)",
+            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.08) 100%)",
             backdropFilter: "blur(20px) saturate(180%)",
             WebkitBackdropFilter: "blur(20px) saturate(180%)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
-            boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+            boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 2px 4px rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(0, 0, 0, 0.15), inset 0 0 20px rgba(255, 255, 255, 0.1)",
             color: "rgba(255, 192, 203, 0.95)",
             textShadow: "0 0 10px rgba(255, 192, 203, 0.8), 0 0 20px rgba(244, 114, 182, 0.6), 0 0 30px rgba(244, 114, 182, 0.4)",
             filter: "drop-shadow(0 0 8px rgba(244, 114, 182, 0.5))",
@@ -149,17 +149,17 @@ export function ChatInputBar({
         {/* Settings button */}
         <button
           type="button"
-          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70"
+          className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70 hover:scale-[1.02]"
           style={{
             WebkitAppRegion: "no-drag",
             borderRadius: "40px",
             paddingTop: "1.5px",
             paddingBottom: "1.5px",
-            background: "rgba(255, 255, 255, 0.15)",
+            background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.08) 100%)",
             backdropFilter: "blur(20px) saturate(180%)",
             WebkitBackdropFilter: "blur(20px) saturate(180%)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
-            boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+            boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 2px 4px rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(0, 0, 0, 0.15), inset 0 0 20px rgba(255, 255, 255, 0.1)",
             color: "rgba(255, 192, 203, 0.95)",
             textShadow: "0 0 10px rgba(255, 192, 203, 0.8), 0 0 20px rgba(244, 114, 182, 0.6), 0 0 30px rgba(244, 114, 182, 0.4)",
             filter: "drop-shadow(0 0 8px rgba(244, 114, 182, 0.5))",
@@ -174,17 +174,17 @@ export function ChatInputBar({
           <button
             type="button"
             onClick={onNewChat}
-            className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70"
+            className="flex items-center gap-1.5 px-3 text-sm font-medium transition-all hover:opacity-70 hover:scale-[1.02]"
             style={{
               WebkitAppRegion: "no-drag",
               borderRadius: "40px",
               paddingTop: "1.5px",
               paddingBottom: "1.5px",
-              background: "rgba(255, 255, 255, 0.15)",
+              background: "radial-gradient(ellipse at center, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.08) 100%)",
               backdropFilter: "blur(20px) saturate(180%)",
               WebkitBackdropFilter: "blur(20px) saturate(180%)",
               border: "1px solid rgba(255, 255, 255, 0.3)",
-              boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+              boxShadow: "0 0 15px rgba(244, 114, 182, 0.4), 0 0 30px rgba(244, 114, 182, 0.3), 0 0 50px rgba(168, 85, 247, 0.25), 0 0 80px rgba(244, 114, 182, 0.15), 0 0 120px rgba(168, 85, 247, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 2px 4px rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(0, 0, 0, 0.15), inset 0 0 20px rgba(255, 255, 255, 0.1)",
               color: "rgba(255, 192, 203, 0.95)",
               textShadow: "0 0 10px rgba(255, 192, 203, 0.8), 0 0 20px rgba(244, 114, 182, 0.6), 0 0 30px rgba(244, 114, 182, 0.4)",
               filter: "drop-shadow(0 0 8px rgba(244, 114, 182, 0.5))",
