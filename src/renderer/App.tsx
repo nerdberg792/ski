@@ -119,8 +119,8 @@ export default function App() {
       setIsExpanded(true);
       // Clear initial entries when starting a new conversation
       setEntries([]);
-      // Reset expanding state after animation
-      setTimeout(() => setIsExpanding(false), 400);
+      // Reset expanding state after animation (matches our 400ms animation duration)
+      setTimeout(() => setIsExpanding(false), 450);
     }
 
     setEntries((prev) => [...prev, promptEntry]);
@@ -326,11 +326,12 @@ export default function App() {
 
   return (
     <div 
-      className="relative flex h-full w-full flex-col text-white overflow-hidden transition-all duration-300 ease-in-out" 
+      className="relative flex h-full w-full flex-col text-white overflow-hidden" 
       style={{ 
         background: "transparent",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
+        transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
       }}
     >
       <ExpandedBackground />

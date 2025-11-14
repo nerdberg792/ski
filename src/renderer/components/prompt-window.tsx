@@ -131,13 +131,14 @@ export function PromptWindow({
       ref={containerRef}
       className={cn(
         "pointer-events-auto w-full flex flex-col gap-0 rounded-xl overflow-hidden",
-        "transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform",
-        isAnimating ? "opacity-0 scale-98" : "opacity-100 scale-100",
+        "transition-[scale,opacity,translate,height] ease-out will-change-transform",
+        isAnimating ? "opacity-0 scale-95" : "opacity-100 scale-100",
         className
       )}
       style={{
         height: containerHeight !== null ? `${containerHeight}px` : undefined,
-        transition: "height 200ms ease",
+        transitionDuration: isAnimating ? "0ms" : "350ms",
+        transitionTimingFunction: "cubic-bezier(0.25, 0.1, 0.25, 1.0)",
         zIndex,
         boxShadow: "0 0 30px rgba(244, 114, 182, 0.25), 0 0 60px rgba(168, 85, 247, 0.15), 0 0 100px rgba(244, 114, 182, 0.1), 0 8px 32px rgba(0, 0, 0, 0.12)",
       }}
@@ -178,12 +179,13 @@ export function PromptWindow({
         {/* Conversation header with function name in a pill */}
         <div 
           ref={headerRef}
-          className="px-5 pt-4 pb-3 relative transition-all duration-200 flex-shrink-0"
+          className="px-5 pt-4 pb-3 relative flex-shrink-0"
           style={{
             background: "rgba(255, 245, 250, 0.98)",
             backdropFilter: "blur(40px) saturate(200%)",
             WebkitBackdropFilter: "blur(40px) saturate(200%)",
             boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+            transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
           }}
         >
           <div className="flex items-center justify-between mb-3">
@@ -215,7 +217,7 @@ export function PromptWindow({
         <CardContent 
           ref={contentRef as unknown as React.Ref<HTMLDivElement>}
           className={cn(
-            "px-5 py-4 transition-all duration-200",
+            "px-5 py-4",
             maxContentHeight !== null ? "overflow-y-auto scrollbar-thin scrollbar-thumb-pink-300/30 scrollbar-track-transparent flex-1" : "flex-shrink-0"
           )}
           style={{
@@ -226,6 +228,7 @@ export function PromptWindow({
             maxHeight: maxContentHeight !== null ? `${maxContentHeight}px` : undefined,
             scrollbarWidth: maxContentHeight !== null ? "thin" : undefined,
             scrollbarColor: maxContentHeight !== null ? "rgba(244, 114, 182, 0.3) transparent" : undefined,
+            transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
           } as React.CSSProperties}
           onDragOver={(e) => {
             e.preventDefault();
@@ -267,7 +270,9 @@ function EntryBlock({ entry, winStatus }: { entry: ChatEntry; winStatus?: Prompt
   const isStreaming = winStatus === "streaming";
   
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" style={{ 
+      transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+    }}>
       {entry.sourceLabel && (
         <div className="flex items-center gap-2">
           <Badge variant="default" className="text-xs">

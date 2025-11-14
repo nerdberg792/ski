@@ -52,14 +52,22 @@ export function PromptWindowsStack({
           perspective: "1000px",
           perspectiveOrigin: "center center",
         }}
-        initial={{ marginTop: 20 }}
+        initial={{ marginTop: 20, opacity: 0 }}
         animate={{
-          marginTop: revealedCardId ? 20 : 20, // Keep consistent for now
+          marginTop: revealedCardId ? 20 : 20,
+          opacity: 1,
         }}
         transition={{
-          type: "spring",
-          stiffness: 300,
-          damping: 30,
+          marginTop: {
+            type: "tween",
+            duration: 0.4,
+            ease: [0.25, 0.1, 0.25, 1.0],
+          },
+          opacity: {
+            type: "tween",
+            duration: 0.35,
+            ease: "easeOut",
+          },
         }}
       >
         <AnimatePresence mode="sync">
@@ -81,8 +89,9 @@ export function PromptWindowsStack({
                 initial={{
                   top: baseOffset,
                   zIndex: 100 + (ordered.length - index),
-                  scale: 1 - 0.02 * depth,
-                  opacity: isTopWindow ? 1 : 0.7,
+                  scale: 0.92,
+                  opacity: 0,
+                  y: 20,
                 }}
                 animate={{
                   top: baseOffset,
@@ -95,10 +104,31 @@ export function PromptWindowsStack({
                   opacity: isTopWindow || isRevealed ? 1 : 0.5,
                 }}
                 transition={{
-                  type: "spring",
-                  stiffness: 300,
-                  damping: 30,
-                  mass: 0.8,
+                  layout: {
+                    type: "tween",
+                    duration: 0.35,
+                    ease: [0.25, 0.1, 0.25, 1.0],
+                  },
+                  y: {
+                    type: "tween",
+                    duration: 0.4,
+                    ease: [0.25, 0.1, 0.25, 1.0],
+                  },
+                  scale: {
+                    type: "tween",
+                    duration: 0.35,
+                    ease: [0.25, 0.1, 0.25, 1.0],
+                  },
+                  opacity: {
+                    type: "tween",
+                    duration: 0.3,
+                    ease: "easeOut",
+                  },
+                  top: {
+                    type: "tween",
+                    duration: 0.4,
+                    ease: [0.25, 0.1, 0.25, 1.0],
+                  },
                 }}
                 style={{
                   pointerEvents: "auto",
@@ -128,14 +158,24 @@ export function PromptWindowsStack({
                 }}
               >
                 <motion.div
+                  initial={{
+                    filter: "blur(2px)",
+                  }}
                   animate={{
                     filter: depth === 0 || isRevealed ? "none" : "blur(0.5px)",
                     scale: isRevealed ? 1 : 1 - 0.05 * depth,
                   }}
                   transition={{
-                    type: "spring",
-                    stiffness: 300,
-                    damping: 25,
+                    filter: {
+                      type: "tween",
+                      duration: 0.3,
+                      ease: "easeOut",
+                    },
+                    scale: {
+                      type: "tween",
+                      duration: 0.35,
+                      ease: [0.25, 0.1, 0.25, 1.0],
+                    },
                   }}
                   style={{
                     pointerEvents: depth === 0 || isRevealed ? "auto" : "none",

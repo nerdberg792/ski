@@ -33,6 +33,7 @@ export function PromptInputBox({
       )}
       style={{
         WebkitAppRegion: "no-drag",
+        transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
       } as React.CSSProperties}
     >
       <Logo isExpanded={true} />

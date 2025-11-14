@@ -166,7 +166,7 @@ function setWindowSize(size: { width: number; height: number }, animated = true)
     y: newY,
     width: size.width,
     height: size.height,
-  }, !animated);
+  }, animated);
 }
 
 function registerShortcuts() {
