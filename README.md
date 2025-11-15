@@ -1,5 +1,9 @@
 # Sky Overlay Clone
 
+<div align="center">
+  <img src="public/sky-logo.png" alt="Sky Logo" width="200"/>
+</div>
+
 Minimalist Electron + React recreation of the floating assistant overlay from [Sky for Mac](https://www.macstories.net/stories/sky-for-mac-preview/#:~:text=Sky%20is%20an%20AI%2Dpowered,tiny%20floating%20UI%20comes%20up), featuring a translucent gradient background, stacked chat cards, and a `Cmd+K` global shortcut toggle.
 
 ## Current Status
