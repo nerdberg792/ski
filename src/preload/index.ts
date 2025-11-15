@@ -39,6 +39,12 @@ const api = {
     ipcRenderer.on("sky:blur", listener);
     return () => ipcRenderer.removeListener("sky:blur", listener);
   },
+  async executeAction(execution: { actionId: string; parameters?: Record<string, string | number | boolean> }, scriptPath: string) {
+    return ipcRenderer.invoke("sky:executeAction", { execution, scriptPath });
+  },
+  async getApiKey() {
+    return ipcRenderer.invoke("sky:getApiKey");
+  },
 };
 
 contextBridge.exposeInMainWorld("sky", api);

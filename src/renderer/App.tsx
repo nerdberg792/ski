@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "@/components/logo";
 import { ChatInputBar } from "@/components/chat-input-bar";
 import type { ChatEntry } from "@/types/chat";
-import { initialEntries, generateMockResponse } from "@/data/presets";
+import { initialEntries } from "@/data/presets";
 import { cn } from "@/lib/utils";
 import { ExpandedBackground } from "@/components/expanded-background";
 import { PromptWindowsStack } from "@/components/prompt-windows-stack";
 import type { PromptWindow } from "@/types/chat";
+import { useGemini } from "@/hooks/useGemini";
+import { getAction } from "@/lib/actions";
+import type { PendingAction } from "@/types/actions";
+import { TaskApprovalWindow } from "@/components/task-approval-window";
 
 function useSkyBridge() {
   return useMemo(() => window.sky, []);
@@ -25,8 +29,75 @@ export default function App() {
   const [promptWindows, setPromptWindows] = useState<PromptWindow[]>([]);
   const [revealedCardId, setRevealedCardId] = useState<string | null>(null);
   const [isInputVisible, setIsInputVisible] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [currentWindowId, setCurrentWindowId] = useState<string | null>(null);
+  const currentWindowIdRef = useRef<string | null>(null); // Ref to track current window ID for callbacks
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const accumulatedTextRef = useRef<string>("");
+
+  // Initialize Gemini
+  const gemini = useGemini({
+    onActionProposed: (action, parameters) => {
+      // Use ref to get the latest currentWindowId value (avoids stale closure)
+      const latestWindowId = currentWindowIdRef.current;
+      console.log("✅ [App] Action proposal received:", {
+        actionId: action.id,
+        actionName: action.name,
+        parameters,
+        currentWindowId: latestWindowId,
+        stateWindowId: currentWindowId,
+      });
+      
+      if (action && latestWindowId) {
+        const pendingAction = {
+          id: `action-${Date.now()}`,
+          action,
+          parameters,
+          promptWindowId: latestWindowId,
+        };
+        console.log("📝 [App] Creating pending action:", pendingAction);
+        setPendingAction(pendingAction);
+      } else {
+        console.warn("⚠️ [App] Action proposal ignored - missing action or windowId:", {
+          hasAction: !!action,
+          currentWindowId: latestWindowId,
+        });
+        // If no windowId, create a standalone action (without prompt window)
+        if (action) {
+          const standaloneAction = {
+            id: `action-${Date.now()}`,
+            action,
+            parameters,
+            // No promptWindowId - this is a standalone action
+          };
+          console.log("📝 [App] Creating standalone pending action:", standaloneAction);
+          setPendingAction(standaloneAction);
+        }
+      }
+    },
+  });
+
+  // Initialize Gemini on mount
+  useEffect(() => {
+    const initGemini = async () => {
+      try {
+        const apiKey = await sky?.getApiKey?.();
+        if (apiKey) {
+          gemini.initialize(apiKey);
+          console.log("Gemini initialized successfully");
+        } else {
+          console.warn("GEMINI_API_KEY not found in environment variables. Please create a .env file with GEMINI_API_KEY=your_key");
+        }
+      } catch (error) {
+        console.error("Error initializing Gemini:", error);
+      }
+    };
+    if (sky && !gemini.initialized) {
+      initGemini();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sky]);
 
   useEffect(() => {
     const unsubscribeVisibility = sky?.onVisibilityChange?.((value) => {
@@ -100,17 +171,42 @@ export default function App() {
     setSelectedResultId(null);
   };
 
-  const submitPrompt = () => {
+  const submitPrompt = async () => {
     if (!inputValue.trim()) return;
+    
+    // Check if Gemini is initialized, if not try to initialize it
+    if (!gemini.initialized) {
+      try {
+        const apiKey = await sky?.getApiKey?.();
+        if (apiKey) {
+          gemini.initialize(apiKey);
+        } else {
+          console.error("Gemini not initialized. Please set GEMINI_API_KEY in your .env file");
+          // Show error to user
+          const errorEntry: ChatEntry = {
+            id: `error-${Date.now()}`,
+            kind: "response",
+            heading: "Configuration Error",
+            body: "Gemini API key not found. Please create a .env file in the project root with: GEMINI_API_KEY=your_api_key_here",
+            sourceLabel: "Sky",
+          };
+          setEntries((prev) => [...prev, errorEntry]);
+          return;
+        }
+      } catch (error) {
+        console.error("Error initializing Gemini:", error);
+        return;
+      }
+    }
 
     const prompt = inputValue.trim();
     const promptEntry: ChatEntry = {
       id: `prompt-${Date.now()}`,
       kind: "prompt",
       heading: prompt,
-      subheading: searchEnabled ? "Searching the web with context…" : "Using on-screen context…",
+      subheading: "Processing with Gemini…",
       highlight: true,
-      sourceLabel: searchEnabled ? "Search Web" : "Sky",
+      sourceLabel: "Sky",
     };
 
     // If not expanded, expand first
@@ -127,28 +223,22 @@ export default function App() {
     setEntries((prev) => [...prev, promptEntry]);
     setInputValue("");
     setIsProcessing(true);
+    accumulatedTextRef.current = "";
 
     // Create a new floating prompt window that will stream the response
     const windowId = `win-${Date.now()}`;
     const createdAt = Date.now();
+    setCurrentWindowId(windowId);
+    currentWindowIdRef.current = windowId; // Update ref immediately for callbacks
 
-    // Get the mock response
-    const responses = generateMockResponse(prompt).map((entry) => ({
-      ...entry,
-      sourceLabel: searchEnabled ? entry.sourceLabel ?? "Search Web" : "Sky",
-    }));
-
-    // For window, we only show the first response in the card; others still appear in chat below
-    const firstResponse = responses[0];
-    const responseEntryForWindow: ChatEntry | undefined = firstResponse
-      ? { ...firstResponse, id: `${windowId}-resp`, body: firstResponse.body ? "" : undefined }
-      : undefined;
-
-    // Create response entries with empty body initially for the chat timeline
-    const responseEntries: ChatEntry[] = responses.map((entry) => ({
-      ...entry,
-      body: entry.body ? "" : undefined,
-    }));
+    // Create empty response entry
+    const responseEntry: ChatEntry = {
+      id: `${windowId}-resp`,
+      kind: "response",
+      heading: "",
+      body: "",
+      sourceLabel: "Sky",
+    };
 
     // Initialize window with prompt + empty response
     setPromptWindows((prev) => [
@@ -157,7 +247,7 @@ export default function App() {
         prompt,
         entries: [
           { ...promptEntry, id: `${windowId}-prompt` },
-          ...(responseEntryForWindow ? [responseEntryForWindow] : []),
+          responseEntry,
         ],
         status: "streaming",
         createdAt,
@@ -165,112 +255,149 @@ export default function App() {
       ...prev,
     ]);
 
-    // Add empty response entries immediately
-    setEntries((prev) => [...prev, ...responseEntries]);
+    // Add empty response entry
+    setEntries((prev) => [...prev, responseEntry]);
 
-    // Start streaming after a short delay
-    window.setTimeout(() => {
-      responses.forEach((fullResponse, responseIndex) => {
-        // Stream the body text if it exists
-        if (fullResponse.body) {
-          streamText(
-            fullResponse.id,
-            fullResponse.body,
-            responseIndex * 100, // Stagger multiple responses
-            (streamedText) => {
-              setEntries((prev) =>
-                prev.map((entry) =>
-                  entry.id === fullResponse.id
-                    ? { ...entry, body: streamedText }
-                    : entry
-                )
-              );
-              // Update matching window response if this is the first response
-              if (responseIndex === 0) {
-                setPromptWindows((prev) =>
-                  prev.map((w) =>
-                    w.id !== windowId
-                      ? w
-                      : {
-                          ...w,
-                          entries: w.entries.map((e) =>
-                            e.id === `${windowId}-resp` ? { ...e, body: streamedText } : e,
-                          ),
-                        },
-                  ),
-                );
-              }
-            },
-            () => {
-              // After body is streamed, add bullets if they exist
-              if (fullResponse.bullets && fullResponse.bullets.length > 0) {
-                setTimeout(() => {
-                  setEntries((prev) =>
-                    prev.map((entry) =>
-                      entry.id === fullResponse.id
-                        ? { ...entry, bullets: fullResponse.bullets }
-                        : entry
-                    )
-                  );
-                }, 200);
-              }
-              // Mark processing as complete after the last response finishes
-              if (responseIndex === responses.length - 1) {
-                setTimeout(() => {
-                  setIsProcessing(false);
-                  requestAnimationFrame(() => textareaRef.current?.focus());
-                }, 300);
-              }
-              // When first response finishes, mark the window as done
-              if (responseIndex === 0) {
-                setPromptWindows((prev) =>
-                  prev.map((w) => (w.id === windowId ? { ...w, status: "done" } : w)),
-                );
-              }
-            }
-          );
-        } else {
-          // If no body, just add the entry as-is
-          setEntries((prev) =>
-            prev.map((entry) =>
-              entry.id === fullResponse.id ? fullResponse : entry
-            )
-          );
-          if (responseIndex === responses.length - 1) {
+    // Stream Gemini response
+    try {
+      await gemini.streamResponse(prompt, {
+        onChunk: (chunk: import("@/lib/gemini").GeminiStreamChunk) => {
+          if (chunk.proposedAction) {
+            // Action proposed - will be handled by onActionProposed callback
+            return;
+          }
+          
+          if (chunk.text) {
+            accumulatedTextRef.current += chunk.text;
+            
+            // Update entries
+            setEntries((prev) =>
+              prev.map((entry) =>
+                entry.id === `${windowId}-resp`
+                  ? { ...entry, body: accumulatedTextRef.current }
+                  : entry
+              )
+            );
+            
+            // Update window
+            setPromptWindows((prev) =>
+              prev.map((w) =>
+                w.id !== windowId
+                  ? w
+                  : {
+                      ...w,
+                      entries: w.entries.map((e) =>
+                        e.id === `${windowId}-resp`
+                          ? { ...e, body: accumulatedTextRef.current }
+                          : e
+                      ),
+                    },
+              ),
+            );
+          }
+          
+          if (chunk.isComplete) {
             setIsProcessing(false);
+            setPromptWindows((prev) =>
+              prev.map((w) => (w.id === windowId ? { ...w, status: "done" } : w)),
+            );
+            setCurrentWindowId(null);
+            currentWindowIdRef.current = null; // Clear ref
             requestAnimationFrame(() => textareaRef.current?.focus());
           }
-        }
+        },
+        onComplete: () => {
+          setIsProcessing(false);
+          setCurrentWindowId(null);
+          currentWindowIdRef.current = null; // Clear ref
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        },
+        onError: (error: Error) => {
+          console.error("Gemini error:", error);
+          setIsProcessing(false);
+          setCurrentWindowId(null);
+          currentWindowIdRef.current = null; // Clear ref
+          
+          // Add error entry
+          const errorEntry: ChatEntry = {
+            id: `${windowId}-error`,
+            kind: "response",
+            heading: "Error",
+            body: `Failed to get response: ${error.message}`,
+            sourceLabel: "Sky",
+          };
+          
+          setEntries((prev) => [...prev, errorEntry]);
+          setPromptWindows((prev) =>
+            prev.map((w) => (w.id === windowId ? { ...w, status: "done" } : w)),
+          );
+        },
       });
-    }, 520);
+    } catch (error) {
+      console.error("Error streaming response:", error);
+      setIsProcessing(false);
+      setCurrentWindowId(null);
+      currentWindowIdRef.current = null; // Clear ref
+    }
   };
 
-  // Helper function to stream text word by word
-  const streamText = (
-    entryId: string,
-    fullText: string,
-    initialDelay: number,
-    onUpdate: (text: string) => void,
-    onComplete: () => void
-  ) => {
-    const words = fullText.split(/(\s+)/);
-    let currentText = "";
-    let wordIndex = 0;
+  // Handle action approval
+  const handleActionApprove = async () => {
+    if (!pendingAction) {
+      console.warn("⚠️ [App] handleActionApprove called but no pending action");
+      return;
+    }
 
-    const streamNextWord = () => {
-      if (wordIndex < words.length) {
-        currentText += words[wordIndex];
-        onUpdate(currentText);
-        wordIndex++;
-        // Random delay between 20-60ms per word to simulate streaming
-        const delay = Math.random() * 40 + 20;
-        setTimeout(streamNextWord, delay);
+    console.log("🚀 [App] User approved action:", {
+      actionId: pendingAction.action.id,
+      actionName: pendingAction.action.name,
+      parameters: pendingAction.parameters,
+    });
+
+    const action = getAction(pendingAction.action.id);
+    if (!action) {
+      console.error("❌ [App] Action not found in registry:", pendingAction.action.id);
+      setPendingAction(null);
+      return;
+    }
+
+    try {
+      console.log("📤 [App] Executing AppleScript:", {
+        scriptPath: action.scriptPath,
+        parameters: pendingAction.parameters,
+      });
+
+      const result = await sky?.executeAction?.(
+        {
+          actionId: pendingAction.action.id,
+          parameters: pendingAction.parameters,
+        },
+        action.scriptPath,
+      );
+
+      if (result?.success) {
+        console.log("✅ [App] Action executed successfully:", {
+          output: result.output,
+          actionId: pendingAction.action.id,
+        });
       } else {
-        onComplete();
+        console.error("❌ [App] Action execution failed:", {
+          error: result?.error,
+          actionId: pendingAction.action.id,
+        });
       }
-    };
+    } catch (error) {
+      console.error("❌ [App] Error executing action:", {
+        error,
+        actionId: pendingAction.action.id,
+      });
+    }
 
-    setTimeout(streamNextWord, initialDelay);
+    setPendingAction(null);
+  };
+
+  const handleActionCancel = () => {
+    setPendingAction(null);
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -379,6 +506,9 @@ export default function App() {
         onCollapse={handleCollapse}
         onNewChat={handleNewChat}
         inputRef={inputRef}
+        pendingAction={pendingAction}
+        onActionApprove={handleActionApprove}
+        onActionCancel={handleActionCancel}
       />
       {/* Underlying expanded content removed per new flow to keep focus on stacked windows */}
     </div>

@@ -3,6 +3,8 @@ import { PromptWindow as PromptWindowCard } from "@/components/prompt-window";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
+import type { PendingAction } from "@/types/actions";
+import { TaskApprovalWindow } from "@/components/task-approval-window";
 
 interface PromptWindowsStackProps {
   windows: PromptWindow[];
@@ -19,6 +21,10 @@ interface PromptWindowsStackProps {
   onCollapse?: () => void;
   onNewChat?: () => void;
   inputRef?: React.Ref<HTMLInputElement>;
+  // Action approval props
+  pendingAction?: PendingAction | null;
+  onActionApprove?: () => void;
+  onActionCancel?: () => void;
 }
 
 export function PromptWindowsStack({
@@ -35,6 +41,9 @@ export function PromptWindowsStack({
   onCollapse,
   onNewChat,
   inputRef,
+  pendingAction,
+  onActionApprove,
+  onActionCancel,
 }: PromptWindowsStackProps) {
   // Newest first for rendering
   const ordered = [...windows].sort((a, b) => b.createdAt - a.createdAt);
@@ -222,28 +231,28 @@ export function PromptWindowsStack({
                 transition={{
                   layout: {
                     type: "tween",
-                    duration: 0.25,
+                    duration: 0.15,
                     ease: [0.25, 0.1, 0.25, 1.0],
                   },
                   y: {
                     type: "spring",
-                    stiffness: 300,
-                    damping: 30,
+                    stiffness: 500,
+                    damping: 25,
                   },
                   scale: {
                     type: "tween",
-                    duration: 0.25,
+                    duration: 0.15,
                     ease: [0.25, 0.1, 0.25, 1.0],
                   },
                   opacity: {
                     type: "tween",
-                    duration: 0.2,
+                    duration: 0.15,
                     ease: "easeOut",
                   },
                   top: {
-                    type: "tween",
-                    duration: 0.25,
-                    ease: [0.25, 0.1, 0.25, 1.0],
+                    type: "spring",
+                    stiffness: 500,
+                    damping: 25,
                   },
                 }}
                 style={{
@@ -324,6 +333,32 @@ export function PromptWindowsStack({
             );
           })}
         </AnimatePresence>
+        
+        {/* Task Approval Window - appears below prompt windows or standalone */}
+        {pendingAction && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{
+              type: "spring",
+              stiffness: 500,
+              damping: 25,
+            }}
+            className="mt-4"
+            style={{
+              position: "relative",
+              zIndex: 200,
+            }}
+          >
+            <TaskApprovalWindow
+              pendingAction={pendingAction}
+              onApprove={onActionApprove || (() => {})}
+              onCancel={onActionCancel || (() => {})}
+              position={pendingAction.promptWindowId ? "below-prompt" : "standalone"}
+            />
+          </motion.div>
+        )}
       </motion.div>
     </div>
   );

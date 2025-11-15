@@ -1,5 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen } from "electron";
 import path from "node:path";
+import { executeAction } from "./actions";
+import type { ActionExecution } from "../renderer/types/actions";
 
 const isMac = process.platform === "darwin";
 
@@ -175,6 +177,24 @@ function registerShortcuts() {
 
 app.whenReady().then(async () => {
   nativeTheme.themeSource = "dark";
+  
+  // Load environment variables BEFORE creating window
+  const dotenv = require("dotenv");
+  const result = dotenv.config();
+  
+  if (result.error) {
+    console.error("Error loading .env file:", result.error);
+  } else {
+    console.log("Environment variables loaded");
+  }
+  
+  // Debug: log if API key is found
+  if (process.env.GEMINI_API_KEY) {
+    console.log("GEMINI_API_KEY found:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
+  } else {
+    console.warn("GEMINI_API_KEY not found in environment variables");
+  }
+  
   await createOverlayWindow();
   if (overlayWindow) {
     overlayWindow.showInactive();
@@ -183,6 +203,12 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("sky:toggle", (_, payload: { visible?: boolean }) => {
     toggleOverlay(payload.visible);
+  });
+
+  ipcMain.handle("sky:getApiKey", () => {
+    const key = process.env.GEMINI_API_KEY || null;
+    console.log("getApiKey called, returning:", key ? key.substring(0, 10) + "..." : "null");
+    return key;
   });
 
   ipcMain.handle("sky:expand", () => {
@@ -209,6 +235,10 @@ app.whenReady().then(async () => {
     if (overlayWindow) {
       overlayWindow.setPosition(payload.x, payload.y);
     }
+  });
+
+  ipcMain.handle("sky:executeAction", async (_, payload: { execution: ActionExecution; scriptPath: string }) => {
+    return executeAction(payload.execution, { scriptPath: payload.scriptPath });
   });
 
   app.on("activate", () => {
