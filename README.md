@@ -129,34 +129,6 @@ sky/
 └── public/                # Static assets
 ```
 
-## Development Notes
 
-- **File Size Limit**: No file exceeds 500 lines of code (enforced by project rules)
-- **Component Library**: Uses shadcn UI components via MCP when possible
-- **Styling**: Tailwind CSS for all styling
-- **Animations**: Framer Motion for smooth transitions
-- **Type Safety**: Full TypeScript coverage
 
-## Git History
 
-```
-5051465 removed extra assets
-4fe976a stable
-5dc9fba stable
-5c051da frosted glass buttons
-7f46f81 some more animations added
-dba8d2b card switching animation working
-b63c1a2 stable with some animations
-a0d0bd6 stable first day
-```
-
-## Contributing
-
-Feel free to extend the action system by:
-1. Adding new AppleScript files to `scripts/`
-2. Registering actions in `src/renderer/lib/actions.ts`
-3. Updating the action execution logic in `src/main/actions.ts`
-
-## License
-
-ISC
