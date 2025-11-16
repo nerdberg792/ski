@@ -33,6 +33,16 @@ export function parseActionFromResponse(
     "open-app": ["open", "launch", "start"],
     "set-volume": ["volume", "sound", "audio"],
     "toggle-do-not-disturb": ["do not disturb", "dnd", "focus", "notifications"],
+    "chrome-get-open-tabs": ["list tabs", "show tabs", "chrome tabs", "browser tabs"],
+    "chrome-open-tab": ["chrome", "google chrome", "open tab", "new tab", "browser"],
+    "chrome-focus-tab": ["focus tab", "switch tab", "activate tab"],
+    "chrome-close-tab": ["close tab", "quit tab", "browser close"],
+    "chrome-reload-tab": ["reload tab", "refresh tab", "refresh page"],
+    "chrome-create-window": ["new window", "chrome window", "browser window"],
+    "chrome-create-window-to-website": ["open window", "open site", "launch website"],
+    "chrome-create-tab": ["new tab", "blank tab"],
+    "chrome-create-tab-to-website": ["open site", "open page", "go to URL"],
+    "chrome-create-incognito-window": ["incognito", "private window", "chrome incognito"],
   };
 
   const lowerText = text.toLowerCase();

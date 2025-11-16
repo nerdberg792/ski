@@ -1,4 +1,61 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type {
+  SpotifyAuthStatus,
+  SpotifyLibraryState,
+  SpotifyPlaybackCommand,
+  SpotifyPlaybackRequest,
+  SpotifyPlaybackState,
+  SpotifySearchCategory,
+  SpotifySearchResults,
+  SpotifyStartAuthResult,
+} from "../types/spotify";
+import type {
+  AppleNote,
+  AppleNotesSearchResult,
+  AppleNotesCreateResult,
+  AppleNotesGetContentResult,
+  AppleNotesUpdateResult,
+} from "../types/apple-notes";
+import type {
+  AppleMapsSearchResult,
+  AppleMapsDirectionsResult,
+} from "../types/apple-maps";
+import type {
+  AppleReminder,
+  AppleRemindersCreateResult,
+  AppleRemindersListResult,
+  AppleRemindersCompleteResult,
+} from "../types/apple-reminders";
+import type {
+  AppleStocksSearchResult,
+} from "../types/apple-stocks";
+import type {
+  FinderCreateFileResult,
+  FinderOpenFileResult,
+  FinderMoveFilesResult,
+  FinderCopyFilesResult,
+  FinderGetSelectedFilesResult,
+} from "../types/finder";
+import type {
+  BrowserBookmark,
+  BrowserBookmarksSearchResult,
+  BrowserBookmarksOpenResult,
+} from "../types/browser-bookmarks";
+import type {
+  BrowserHistoryEntry,
+  BrowserHistorySearchResult,
+  BrowserHistoryOpenResult,
+} from "../types/browser-history";
+import type {
+  BrowserTab,
+  BrowserTabsSearchResult,
+  BrowserTabsCloseResult,
+} from "../types/browser-tabs";
+import type {
+  BrowserProfile,
+  BrowserProfilesListResult,
+  BrowserProfilesOpenResult,
+} from "../types/browser-profiles";
 
 const api = {
   toggleOverlay(visible?: boolean) {
@@ -44,6 +101,152 @@ const api = {
   },
   async getApiKey() {
     return ipcRenderer.invoke("sky:getApiKey");
+  },
+  spotify: {
+    startAuth(): Promise<SpotifyStartAuthResult> {
+      return ipcRenderer.invoke("spotify:startAuth");
+    },
+    disconnect(): Promise<SpotifyAuthStatus> {
+      return ipcRenderer.invoke("spotify:disconnect");
+    },
+    getStatus(): Promise<SpotifyAuthStatus> {
+      return ipcRenderer.invoke("spotify:getStatus");
+    },
+    refreshPlayback(): Promise<SpotifyPlaybackState | null> {
+      return ipcRenderer.invoke("spotify:refreshPlayback");
+    },
+    sendCommand(command: SpotifyPlaybackCommand): Promise<SpotifyPlaybackState | null> {
+      return ipcRenderer.invoke("spotify:playbackCommand", command);
+    },
+    search(payload: { query: string; categories?: SpotifySearchCategory[] }): Promise<SpotifySearchResults> {
+      return ipcRenderer.invoke("spotify:search", payload);
+    },
+    getLibrary(): Promise<SpotifyLibraryState> {
+      return ipcRenderer.invoke("spotify:getLibrary");
+    },
+    playUri(payload: SpotifyPlaybackRequest): Promise<void> {
+      return ipcRenderer.invoke("spotify:playUri", payload);
+    },
+    queueUri(uri: string): Promise<void> {
+      return ipcRenderer.invoke("spotify:queueUri", { uri });
+    },
+    setTrackSaved(payload: { trackId: string; saved: boolean }): Promise<void> {
+      return ipcRenderer.invoke("spotify:setTrackSaved", payload);
+    },
+    setAlbumSaved(payload: { albumId: string; saved: boolean }): Promise<void> {
+      return ipcRenderer.invoke("spotify:setAlbumSaved", payload);
+    },
+    anonymizeTrack(): Promise<{ success: boolean; url?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:anonymizeTrack");
+    },
+    openUrlInSpotify(): Promise<{ success: boolean; url?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:openUrlInSpotify");
+    },
+    onAuthChange(callback: (status: SpotifyAuthStatus) => void) {
+      const listener = (_: Electron.IpcRendererEvent, status: SpotifyAuthStatus) => callback(status);
+      ipcRenderer.on("spotify:auth", listener);
+      return () => ipcRenderer.removeListener("spotify:auth", listener);
+    },
+    onPlaybackChange(callback: (state: SpotifyPlaybackState | null) => void) {
+      const listener = (_: Electron.IpcRendererEvent, state: SpotifyPlaybackState | null) => callback(state);
+      ipcRenderer.on("spotify:playback", listener);
+      return () => ipcRenderer.removeListener("spotify:playback", listener);
+    },
+    onError(callback: (message: string) => void) {
+      const listener = (_: Electron.IpcRendererEvent, message: string) => callback(message);
+      ipcRenderer.on("spotify:error", listener);
+      return () => ipcRenderer.removeListener("spotify:error", listener);
+    },
+  },
+  appleNotes: {
+    search(query: string): Promise<AppleNotesSearchResult> {
+      return ipcRenderer.invoke("apple-notes:search", { query });
+    },
+    create(payload: { content?: string; text?: string }): Promise<AppleNotesCreateResult> {
+      return ipcRenderer.invoke("apple-notes:create", payload);
+    },
+    getContent(noteId: string): Promise<AppleNotesGetContentResult> {
+      return ipcRenderer.invoke("apple-notes:getContent", { noteId });
+    },
+    update(payload: { noteId: string; content: string }): Promise<AppleNotesUpdateResult> {
+      return ipcRenderer.invoke("apple-notes:update", payload);
+    },
+  },
+  appleMaps: {
+    search(query: string): Promise<AppleMapsSearchResult> {
+      return ipcRenderer.invoke("apple-maps:search", { query });
+    },
+    directions(payload: { destination: string; origin?: string; mode?: string }): Promise<AppleMapsDirectionsResult> {
+      return ipcRenderer.invoke("apple-maps:directions", payload);
+    },
+    directionsHome(payload: { homeAddress: string; mode?: string }): Promise<AppleMapsDirectionsResult> {
+      return ipcRenderer.invoke("apple-maps:directions-home", payload);
+    },
+  },
+  appleReminders: {
+    create(payload: { title: string; listName?: string; dueDate?: string; priority?: string; notes?: string }): Promise<AppleRemindersCreateResult> {
+      return ipcRenderer.invoke("apple-reminders:create", payload);
+    },
+    list(payload: { listName?: string; completed?: boolean }): Promise<AppleRemindersListResult> {
+      return ipcRenderer.invoke("apple-reminders:list", payload);
+    },
+    complete(reminderId: string): Promise<AppleRemindersCompleteResult> {
+      return ipcRenderer.invoke("apple-reminders:complete", { reminderId });
+    },
+  },
+  appleStocks: {
+    search(ticker: string): Promise<AppleStocksSearchResult> {
+      return ipcRenderer.invoke("apple-stocks:search", { ticker });
+    },
+  },
+  finder: {
+    createFile(payload: { filename: string; autoOpen?: boolean }): Promise<FinderCreateFileResult> {
+      return ipcRenderer.invoke("finder:createFile", payload);
+    },
+    openFile(payload: { path: string; application?: string }): Promise<FinderOpenFileResult> {
+      return ipcRenderer.invoke("finder:openFile", payload);
+    },
+    moveToFolder(payload: { destination: string; filePaths: string[] }): Promise<FinderMoveFilesResult> {
+      return ipcRenderer.invoke("finder:moveToFolder", payload);
+    },
+    copyToFolder(payload: { destination: string; filePaths: string[] }): Promise<FinderCopyFilesResult> {
+      return ipcRenderer.invoke("finder:copyToFolder", payload);
+    },
+    getSelectedFiles(): Promise<FinderGetSelectedFilesResult> {
+      return ipcRenderer.invoke("finder:getSelectedFiles");
+    },
+  },
+  browserBookmarks: {
+    search(query: string, browser?: string): Promise<BrowserBookmarksSearchResult> {
+      return ipcRenderer.invoke("browser-bookmarks:search", { query, browser });
+    },
+    open(payload: { url: string; browser?: string }): Promise<BrowserBookmarksOpenResult> {
+      return ipcRenderer.invoke("browser-bookmarks:open", payload);
+    },
+  },
+  browserHistory: {
+    search(payload: { query: string; browser?: string; limit?: number }): Promise<BrowserHistorySearchResult> {
+      return ipcRenderer.invoke("browser-history:search", payload);
+    },
+    open(payload: { url: string; browser?: string }): Promise<BrowserHistoryOpenResult> {
+      return ipcRenderer.invoke("browser-history:open", payload);
+    },
+  },
+  browserTabs: {
+    search(query: string, browser?: string): Promise<BrowserTabsSearchResult> {
+      return ipcRenderer.invoke("browser-tabs:search", { query, browser });
+    },
+    close(payload: { browser: string; windowId: string; tabIndex: number }): Promise<BrowserTabsCloseResult> {
+      return ipcRenderer.invoke("browser-tabs:close", payload);
+    },
+  },
+  browserProfiles: {
+    list(browser: string): Promise<BrowserProfilesListResult> {
+      return ipcRenderer.invoke("browser-profiles:list", { browser });
+    },
+    open(payload: { browser: string; profile: string }): Promise<BrowserProfilesOpenResult> {
+      return ipcRenderer.invoke("browser-profiles:open", payload);
+    },
   },
 };
 

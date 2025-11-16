@@ -1,13 +1,38 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen, shell } from "electron";
 import path from "node:path";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { executeAction } from "./actions";
 import type { ActionExecution } from "../renderer/types/actions";
+import { SpotifyAuthManager } from "./spotify-auth";
+import { SpotifyApiClient } from "./spotify-api";
+import { buildScriptEnsuringSpotifyIsRunning } from "./spotify-helpers";
+import * as appleNotes from "./apple-notes";
+import * as appleMaps from "./apple-maps";
+import * as appleReminders from "./apple-reminders";
+import * as appleStocks from "./apple-stocks";
+import * as finder from "./finder";
+import * as browserBookmarks from "./browser-bookmarks";
+import * as browserHistory from "./browser-history";
+import * as browserTabs from "./browser-tabs";
+import * as browserProfiles from "./browser-profiles";
+import type {
+  SpotifyAuthStatus,
+  SpotifyPlaybackCommand,
+  SpotifyPlaybackState,
+  SpotifyPlaybackRequest,
+  SpotifySearchCategory,
+} from "../types/spotify";
+
+const execAsync = promisify(exec);
 
 const isMac = process.platform === "darwin";
 
 let overlayWindow: BrowserWindow | null = null;
 let isWindowReady = false;
 let isQuitting = false;
+let spotifyManager: SpotifyAuthManager | null = null;
+let spotifyApi: SpotifyApiClient | null = null;
 
 const COMPACT_SIZE = { width: 600, height: 50 };
 const EXPANDED_SIZE = { width: 720, height: 520 };
@@ -195,6 +220,31 @@ app.whenReady().then(async () => {
     console.warn("GEMINI_API_KEY not found in environment variables");
   }
   
+  const spotifyConfig = {
+    clientId: process.env.SPOTIFY_CLIENT_ID ?? "",
+    clientSecret: process.env.SPOTIFY_CLIENT_SECRET ?? "",
+    redirectUri: process.env.SPOTIFY_REDIRECT_URI ?? "",
+  };
+
+  if (spotifyConfig.clientId && spotifyConfig.redirectUri) {
+    spotifyManager = new SpotifyAuthManager({
+      clientId: spotifyConfig.clientId,
+      clientSecret: spotifyConfig.clientSecret,
+      redirectUri: spotifyConfig.redirectUri,
+    });
+    spotifyManager.on("auth-updated", (payload: SpotifyAuthStatus) => {
+      safeSend("spotify:auth", payload);
+    });
+    spotifyManager.on("playback-updated", (state: SpotifyPlaybackState | null) => {
+      safeSend("spotify:playback", state);
+    });
+    spotifyManager.on("auth-error", (message: string) => {
+      safeSend("spotify:error", message);
+    });
+    await spotifyManager.initialize();
+    spotifyApi = new SpotifyApiClient(spotifyManager);
+  }
+
   await createOverlayWindow();
   if (overlayWindow) {
     overlayWindow.showInactive();
@@ -239,6 +289,365 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("sky:executeAction", async (_, payload: { execution: ActionExecution; scriptPath: string }) => {
     return executeAction(payload.execution, { scriptPath: payload.scriptPath });
+  });
+
+  ipcMain.handle("spotify:getStatus", () => {
+    return spotifyManager?.getAuthState() ?? { connected: false };
+  });
+
+  ipcMain.handle("spotify:startAuth", async () => {
+    if (!spotifyManager) {
+      throw new Error("Spotify is not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_REDIRECT_URI.");
+    }
+    return spotifyManager.beginAuth();
+  });
+
+  ipcMain.handle("spotify:disconnect", async () => {
+    await spotifyManager?.disconnect();
+    return spotifyManager?.getAuthState() ?? { connected: false };
+  });
+
+  ipcMain.handle("spotify:refreshPlayback", async () => {
+    return spotifyManager?.fetchPlaybackState() ?? null;
+  });
+
+  ipcMain.handle("spotify:playbackCommand", async (_, command: SpotifyPlaybackCommand) => {
+    if (!spotifyManager) {
+      throw new Error("Spotify is not configured.");
+    }
+    return spotifyManager.controlPlayback(command);
+  });
+
+  ipcMain.handle(
+    "spotify:search",
+    async (_, payload: { query: string; categories?: SpotifySearchCategory[] }) => {
+      if (!spotifyApi) {
+        throw new Error("Spotify is not configured.");
+      }
+      return spotifyApi.search(payload.query, payload.categories);
+    },
+  );
+
+  ipcMain.handle("spotify:getLibrary", async () => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return spotifyApi.getLibrary();
+  });
+
+  ipcMain.handle("spotify:playUri", async (_, payload: SpotifyPlaybackRequest) => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return spotifyApi.play(payload);
+  });
+
+  ipcMain.handle("spotify:queueUri", async (_, payload: { uri: string }) => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return spotifyApi.queue(payload.uri);
+  });
+
+  ipcMain.handle("spotify:setTrackSaved", async (_, payload: { trackId: string; saved: boolean }) => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return spotifyApi.setTrackSaved(payload.trackId, payload.saved);
+  });
+
+  ipcMain.handle("spotify:setAlbumSaved", async (_, payload: { albumId: string; saved: boolean }) => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return spotifyApi.setAlbumSaved(payload.albumId, payload.saved);
+  });
+
+  ipcMain.handle("spotify:anonymizeTrack", async () => {
+    try {
+      const script = buildScriptEnsuringSpotifyIsRunning(`
+        set spotifyURL to spotify url of the current track
+        set AppleScript's text item delimiters to ":"
+        set idPart to third text item of spotifyURL
+        return ("https://open.spoqify.com/track/" & idPart)
+      `);
+      
+      const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`);
+      const anonymizedUrl = stdout.trim();
+      
+      if (anonymizedUrl) {
+        await shell.openExternal(anonymizedUrl);
+        return { success: true, url: anonymizedUrl };
+      }
+      
+      throw new Error("Failed to get track URL");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("spotify:openUrlInSpotify", async () => {
+    try {
+      // Get URL from active Chrome tab
+      const getUrlScript = `
+        tell application "Google Chrome"
+          activate
+          set theURL to URL of active tab of first window
+          return theURL
+        end tell
+      `;
+      
+      const { stdout } = await execAsync(`osascript -e '${getUrlScript.replace(/'/g, "'\\''")}'`);
+      const theURL = stdout.trim();
+      
+      if (!theURL) {
+        throw new Error("No URL found in active Chrome tab");
+      }
+      
+      // Open URL in Spotify
+      const openScript = buildScriptEnsuringSpotifyIsRunning(`
+        activate
+        open location "${theURL}"
+      `);
+      
+      await execAsync(`osascript -e '${openScript.replace(/'/g, "'\\''")}'`);
+      return { success: true, url: theURL };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Apple Notes IPC handlers
+  ipcMain.handle("apple-notes:search", async (_, payload: { query: string }) => {
+    try {
+      return await appleNotes.searchNotes(payload.query);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { notes: [], success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("apple-notes:create", async (_, payload: { content?: string; text?: string }) => {
+    try {
+      return await appleNotes.createNote(payload.content, payload.text);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("apple-notes:getContent", async (_, payload: { noteId: string }) => {
+    try {
+      return await appleNotes.getNoteContent(payload.noteId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("apple-notes:update", async (_, payload: { noteId: string; content: string }) => {
+    try {
+      return await appleNotes.updateNote(payload.noteId, payload.content);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Apple Maps IPC handlers
+  ipcMain.handle("apple-maps:search", async (_, payload: { query: string }) => {
+    try {
+      return await appleMaps.searchMaps(payload.query);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("apple-maps:directions", async (_, payload: { destination: string; origin?: string; mode?: string }) => {
+    try {
+      return await appleMaps.getDirections(payload.destination, payload.origin, payload.mode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("apple-maps:directions-home", async (_, payload: { homeAddress: string; mode?: string }) => {
+    try {
+      return await appleMaps.getDirectionsHome(payload.homeAddress, payload.mode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Apple Reminders IPC handlers
+  ipcMain.handle("apple-reminders:create", async (_, payload: {
+    title: string;
+    listName?: string;
+    dueDate?: string;
+    priority?: string;
+    notes?: string;
+  }) => {
+    try {
+      return await appleReminders.createReminder(payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("apple-reminders:list", async (_, payload: { listName?: string; completed?: boolean }) => {
+    try {
+      return await appleReminders.listReminders(payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, reminders: [], error: message };
+    }
+  });
+
+  ipcMain.handle("apple-reminders:complete", async (_, payload: { reminderId: string }) => {
+    try {
+      return await appleReminders.completeReminder(payload.reminderId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Apple Stocks IPC handlers
+  ipcMain.handle("apple-stocks:search", async (_, payload: { ticker: string }) => {
+    try {
+      return await appleStocks.searchStocks(payload.ticker);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Finder IPC handlers
+  ipcMain.handle("finder:createFile", async (_, payload: { filename: string; autoOpen?: boolean }) => {
+    try {
+      return await finder.createFileInFinder(payload.filename, payload.autoOpen);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("finder:openFile", async (_, payload: { path: string; application?: string }) => {
+    try {
+      return await finder.openFile(payload.path, payload.application);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("finder:moveToFolder", async (_, payload: { destination: string; filePaths: string[] }) => {
+    try {
+      return await finder.moveFilesToFolder(payload.destination, payload.filePaths);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("finder:copyToFolder", async (_, payload: { destination: string; filePaths: string[] }) => {
+    try {
+      return await finder.copyFilesToFolder(payload.destination, payload.filePaths);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("finder:getSelectedFiles", async () => {
+    try {
+      return await finder.getSelectedFinderFiles();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Browser Bookmarks IPC handlers
+  ipcMain.handle("browser-bookmarks:search", async (_, payload: { query: string; browser?: string }) => {
+    try {
+      return await browserBookmarks.searchBookmarks(payload.query, payload.browser);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("browser-bookmarks:open", async (_, payload: { url: string; browser?: string }) => {
+    try {
+      return await browserBookmarks.openBookmark(payload.url, payload.browser);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Browser History IPC handlers
+  ipcMain.handle("browser-history:search", async (_, payload: { query: string; browser?: string; limit?: number }) => {
+    try {
+      return await browserHistory.searchHistory(payload.query, payload.browser, payload.limit);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("browser-history:open", async (_, payload: { url: string; browser?: string }) => {
+    try {
+      return await browserHistory.openHistoryUrl(payload.url, payload.browser);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Browser Tabs IPC handlers
+  ipcMain.handle("browser-tabs:search", async (_, payload: { query: string; browser?: string }) => {
+    try {
+      return await browserTabs.searchTabs(payload.query, payload.browser);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("browser-tabs:close", async (_, payload: { browser: string; windowId: string; tabIndex: number }) => {
+    try {
+      return await browserTabs.closeTab(payload.browser, payload.windowId, payload.tabIndex);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  // Browser Profiles IPC handlers
+  ipcMain.handle("browser-profiles:list", async (_, payload: { browser: string }) => {
+    try {
+      return await browserProfiles.listProfiles(payload.browser);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("browser-profiles:open", async (_, payload: { browser: string; profile: string }) => {
+    try {
+      return await browserProfiles.openBrowserProfile(payload.browser, payload.profile);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
   });
 
   app.on("activate", () => {

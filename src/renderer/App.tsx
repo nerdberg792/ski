@@ -2,30 +2,66 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "@/components/logo";
 import { ChatInputBar } from "@/components/chat-input-bar";
 import type { ChatEntry } from "@/types/chat";
-import { initialEntries } from "@/data/presets";
 import { cn } from "@/lib/utils";
 import { ExpandedBackground } from "@/components/expanded-background";
 import { PromptWindowsStack } from "@/components/prompt-windows-stack";
 import type { PromptWindow } from "@/types/chat";
 import { useGemini } from "@/hooks/useGemini";
-import { getAction } from "@/lib/actions";
+import { applyActionDefaults, getAction } from "@/lib/actions";
 import type { PendingAction } from "@/types/actions";
-import { TaskApprovalWindow } from "@/components/task-approval-window";
+import { SpotifyControlCard } from "@/components/spotify-control-card";
+import { useSpotify } from "@/hooks/useSpotify";
+import { IntegrationCardWrapper } from "@/components/integration-card-wrapper";
+import { useAppleNotes } from "@/hooks/useAppleNotes";
+import { useAppleMaps } from "@/hooks/useAppleMaps";
+import { useAppleReminders } from "@/hooks/useAppleReminders";
+import { useAppleStocks } from "@/hooks/useAppleStocks";
+import { useFinder } from "@/hooks/useFinder";
+import { useBrowserBookmarks } from "@/hooks/useBrowserBookmarks";
+import { useBrowserHistory } from "@/hooks/useBrowserHistory";
+import { useBrowserTabs } from "@/hooks/useBrowserTabs";
+import { useBrowserProfiles } from "@/hooks/useBrowserProfiles";
 
 function useSkyBridge() {
   return useMemo(() => window.sky, []);
 }
 
+// Wrapper component for Spotify card that only shows when user asks about Spotify
+interface SpotifyCardWrapperProps {
+  show: boolean;
+}
+
+function SpotifyCardWrapper({ show }: SpotifyCardWrapperProps) {
+  const { status, isConfigured } = useSpotify();
+  // Only show if: user asked about Spotify AND Spotify is configured
+  const shouldShow = show && isConfigured && (status.connected || !!status.account);
+  
+  return (
+    <IntegrationCardWrapper 
+      position="bottom-right" 
+      zIndex={30}
+      show={shouldShow}
+    >
+      <SpotifyControlCard />
+    </IntegrationCardWrapper>
+  );
+}
+
 export default function App() {
   const sky = useSkyBridge();
-  const [entries, setEntries] = useState<ChatEntry[]>(initialEntries);
-  const [searchEnabled, setSearchEnabled] = useState(true);
+  const appleNotes = useAppleNotes();
+  const appleMaps = useAppleMaps();
+  const appleReminders = useAppleReminders();
+  const appleStocks = useAppleStocks();
+  const finder = useFinder();
+  const browserBookmarks = useBrowserBookmarks();
+  const browserHistory = useBrowserHistory();
+  const browserTabs = useBrowserTabs();
+  const browserProfiles = useBrowserProfiles();
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isExpanding, setIsExpanding] = useState(false);
-  const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [promptWindows, setPromptWindows] = useState<PromptWindow[]>([]);
   const [revealedCardId, setRevealedCardId] = useState<string | null>(null);
   const [isInputVisible, setIsInputVisible] = useState(false);
@@ -35,45 +71,237 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const accumulatedTextRef = useRef<string>("");
+  const [showSpotifyCard, setShowSpotifyCard] = useState(false);
+  const spotifyCardTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Auto-hide Spotify card after 2 minutes of inactivity
+  useEffect(() => {
+    if (showSpotifyCard) {
+      // Clear existing timeout
+      if (spotifyCardTimeoutRef.current) {
+        clearTimeout(spotifyCardTimeoutRef.current);
+      }
+      // Set new timeout to hide after 2 minutes
+      spotifyCardTimeoutRef.current = setTimeout(() => {
+        setShowSpotifyCard(false);
+      }, 2 * 60 * 1000); // 2 minutes
+    }
+    
+    return () => {
+      if (spotifyCardTimeoutRef.current) {
+        clearTimeout(spotifyCardTimeoutRef.current);
+      }
+    };
+  }, [showSpotifyCard]);
+  
+  const pushSystemEntry = (entry: ChatEntry) => {
+    setPromptWindows((prev) => [
+      {
+        id: entry.id,
+        prompt: entry.heading || "Sky",
+        entries: [entry],
+        status: "done",
+        createdAt: Date.now(),
+      },
+      ...prev,
+    ]);
+  };
+
+  // Helper function to add action result to current prompt window
+  const addActionResult = (resultText: string, isError: boolean = false) => {
+    const windowId = currentWindowIdRef.current;
+    if (!windowId) return;
+
+    const resultEntry: ChatEntry = {
+      id: `${windowId}-action-result-${Date.now()}`,
+      kind: "response",
+      heading: "",
+      body: resultText,
+      sourceLabel: isError ? "Error" : "Sky",
+    };
+
+    setPromptWindows((prev) =>
+      prev.map((w) =>
+        w.id === windowId
+          ? {
+              ...w,
+              entries: [...w.entries, resultEntry],
+            }
+          : w
+      )
+    );
+  };
+
+  // Helper function to send action result back to Gemini for response
+  const sendActionResultToGemini = async (actionName: string, resultText: string, windowId: string | null, isError: boolean = false) => {
+    console.log("🔄 [App] sendActionResultToGemini called:", { actionName, resultText: resultText.substring(0, 100), windowId, isError });
+    if (!windowId) {
+      console.error("❌ [App] No windowId provided, cannot send result to Gemini");
+      // Try to find the most recent window as fallback
+      const mostRecentWindow = promptWindows[0];
+      if (mostRecentWindow) {
+        console.log("🔄 [App] Using most recent window as fallback:", mostRecentWindow.id);
+        return await sendActionResultToGemini(actionName, resultText, mostRecentWindow.id, isError);
+      }
+      return;
+    }
+
+    // Get the original prompt from the window for context
+    // We'll read it from state - the window should exist since action was just executed
+    const currentWindow = promptWindows.find((w) => w.id === windowId);
+    const originalPrompt = currentWindow?.prompt || "";
+    console.log("🔄 [App] Original prompt:", originalPrompt);
+    console.log("🔄 [App] Current window found:", !!currentWindow);
+
+    // Add action result to chat
+    console.log("🔄 [App] Adding action result to chat");
+    addActionResult(resultText, isError);
+
+    // Create a prompt for Gemini with the action result and original context
+    const followUpPrompt = `The user asked: "${originalPrompt}". I executed the action "${actionName}" and got the following result: ${resultText}. Please provide a helpful, natural response to the user about this result in a conversational way.`;
+    console.log("🔄 [App] Follow-up prompt created:", followUpPrompt.substring(0, 200));
+
+    // Set up streaming response for Gemini
+    console.log("🔄 [App] Setting isProcessing to true");
+    setIsProcessing(true);
+    accumulatedTextRef.current = "";
+
+    // Create response entry
+    const responseEntry: ChatEntry = {
+      id: `${windowId}-action-response-${Date.now()}`,
+      kind: "response",
+      heading: "",
+      body: "",
+      sourceLabel: "Sky",
+    };
+
+    // Add empty response entry
+    setPromptWindows((prev) =>
+      prev.map((w) =>
+        w.id === windowId
+          ? {
+              ...w,
+              entries: [...w.entries, responseEntry],
+            }
+          : w
+      )
+    );
+
+    try {
+      console.log("🔄 [App] Calling gemini.streamResponse");
+      await gemini.streamResponse(followUpPrompt, {
+        onChunk: (chunk: import("@/lib/gemini").GeminiStreamChunk) => {
+          console.log("🔄 [App] Gemini chunk received:", { 
+            hasText: !!chunk.text, 
+            textLength: chunk.text?.length || 0,
+            hasProposedAction: !!chunk.proposedAction,
+            isComplete: chunk.isComplete 
+          });
+          
+          if (chunk.proposedAction) {
+            // Action proposed - ignore for follow-up responses
+            console.log("🔄 [App] Ignoring proposed action in follow-up");
+            return;
+          }
+
+          if (chunk.text) {
+            accumulatedTextRef.current += chunk.text;
+            console.log("🔄 [App] Accumulated text length:", accumulatedTextRef.current.length);
+
+            // Update window with streaming text
+            setPromptWindows((prev) =>
+              prev.map((w) =>
+                w.id !== windowId
+                  ? w
+                  : {
+                      ...w,
+                      entries: w.entries.map((e) =>
+                        e.id === responseEntry.id
+                          ? { ...e, body: accumulatedTextRef.current }
+                          : e
+                      ),
+                    },
+              ),
+            );
+          }
+
+          if (chunk.isComplete) {
+            console.log("🔄 [App] Chunk is complete, finalizing");
+            setIsProcessing(false);
+            setPromptWindows((prev) =>
+              prev.map((w) => (w.id === windowId ? { ...w, status: "done" } : w)),
+            );
+            requestAnimationFrame(() => textareaRef.current?.focus());
+          }
+        },
+        onComplete: () => {
+          console.log("🔄 [App] Gemini stream complete");
+          setIsProcessing(false);
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        },
+        onError: (error: Error) => {
+          console.error("❌ [App] Gemini error in action follow-up:", error);
+          setIsProcessing(false);
+          setPromptWindows((prev) =>
+            prev.map((w) =>
+              w.id === windowId
+                ? {
+                    ...w,
+                    entries: [
+                      ...w.entries,
+                      {
+                        id: `${windowId}-error-${Date.now()}`,
+                        kind: "response",
+                        heading: "",
+                        body: `Error getting response: ${error.message}`,
+                        sourceLabel: "Error",
+                      },
+                    ],
+                  }
+                : w
+            ),
+          );
+        },
+      });
+      console.log("🔄 [App] gemini.streamResponse completed");
+    } catch (error) {
+      console.error("❌ [App] Error sending action result to Gemini:", error);
+      setIsProcessing(false);
+    }
+  };
 
   // Initialize Gemini
   const gemini = useGemini({
     onActionProposed: (action, parameters) => {
-      // Use ref to get the latest currentWindowId value (avoids stale closure)
+      if (!action) {
+        return;
+      }
+      // Show Spotify card only if a Spotify action is proposed
+      if (action.category === "spotify") {
+        setShowSpotifyCard(true);
+      } else {
+        // Hide card for non-Spotify actions
+        setShowSpotifyCard(false);
+        if (spotifyCardTimeoutRef.current) {
+          clearTimeout(spotifyCardTimeoutRef.current);
+          spotifyCardTimeoutRef.current = null;
+        }
+      }
       const latestWindowId = currentWindowIdRef.current;
-      console.log("✅ [App] Action proposal received:", {
-        actionId: action.id,
-        actionName: action.name,
-        parameters,
-        currentWindowId: latestWindowId,
-        stateWindowId: currentWindowId,
-      });
-      
-      if (action && latestWindowId) {
-        const pendingAction = {
+      const normalizedParameters = applyActionDefaults(action, parameters);
+      if (latestWindowId) {
+        setPendingAction({
           id: `action-${Date.now()}`,
           action,
-          parameters,
+          parameters: normalizedParameters,
           promptWindowId: latestWindowId,
-        };
-        console.log("📝 [App] Creating pending action:", pendingAction);
-        setPendingAction(pendingAction);
-      } else {
-        console.warn("⚠️ [App] Action proposal ignored - missing action or windowId:", {
-          hasAction: !!action,
-          currentWindowId: latestWindowId,
         });
-        // If no windowId, create a standalone action (without prompt window)
-        if (action) {
-          const standaloneAction = {
-            id: `action-${Date.now()}`,
-            action,
-            parameters,
-            // No promptWindowId - this is a standalone action
-          };
-          console.log("📝 [App] Creating standalone pending action:", standaloneAction);
-          setPendingAction(standaloneAction);
-        }
+      } else {
+        setPendingAction({
+          id: `action-${Date.now()}`,
+          action,
+          parameters: normalizedParameters,
+        });
       }
     },
   });
@@ -85,9 +313,15 @@ export default function App() {
         const apiKey = await sky?.getApiKey?.();
         if (apiKey) {
           gemini.initialize(apiKey);
-          console.log("Gemini initialized successfully");
         } else {
-          console.warn("GEMINI_API_KEY not found in environment variables. Please create a .env file with GEMINI_API_KEY=your_key");
+          const errorEntry: ChatEntry = {
+            id: `error-${Date.now()}`,
+            kind: "response",
+            heading: "Configuration Error",
+            body: "Gemini API key not found. Please create a .env file in the project root with: GEMINI_API_KEY=your_api_key_here",
+            sourceLabel: "Sky",
+          };
+          pushSystemEntry(errorEntry);
         }
       } catch (error) {
         console.error("Error initializing Gemini:", error);
@@ -161,16 +395,6 @@ export default function App() {
 
   // Focused-result persistence no longer needed in the stacked flow; keep stub state only.
 
-  const handleSelectResult = (id: string) => {
-    console.log("[App] handleSelectResult", { id });
-    setSelectedResultId(id);
-  };
-
-  const handleClearSelection = () => {
-    console.log("[App] handleClearSelection");
-    setSelectedResultId(null);
-  };
-
   const submitPrompt = async () => {
     if (!inputValue.trim()) return;
     
@@ -181,8 +405,6 @@ export default function App() {
         if (apiKey) {
           gemini.initialize(apiKey);
         } else {
-          console.error("Gemini not initialized. Please set GEMINI_API_KEY in your .env file");
-          // Show error to user
           const errorEntry: ChatEntry = {
             id: `error-${Date.now()}`,
             kind: "response",
@@ -190,7 +412,7 @@ export default function App() {
             body: "Gemini API key not found. Please create a .env file in the project root with: GEMINI_API_KEY=your_api_key_here",
             sourceLabel: "Sky",
           };
-          setEntries((prev) => [...prev, errorEntry]);
+          pushSystemEntry(errorEntry);
           return;
         }
       } catch (error) {
@@ -200,6 +422,37 @@ export default function App() {
     }
 
     const prompt = inputValue.trim();
+    
+    // Check if the prompt explicitly mentions Spotify or music control
+    // Use more specific patterns to avoid false positives
+    const promptLower = prompt.toLowerCase();
+    const spotifyPatterns = [
+      /\bspotify\b/i,
+      /play (song|music|track|album|playlist)/i,
+      /pause (song|music|track)/i,
+      /(next|previous|skip) (song|track)/i,
+      /(set|change|adjust) (spotify|music) volume/i,
+      /(shuffle|repeat) (on|off|toggle)/i,
+      /(search|find) (song|music|track|album|artist|playlist) (on|in) spotify/i,
+      /spotify (play|pause|next|previous|volume|shuffle|search)/i,
+    ];
+    
+    const isSpotifyRelated = spotifyPatterns.some(pattern => pattern.test(prompt));
+    
+    // Only show card if explicitly asking about Spotify
+    // Hide it for all other queries
+    if (isSpotifyRelated) {
+      setShowSpotifyCard(true);
+    } else {
+      // Immediately hide card for non-Spotify queries
+      setShowSpotifyCard(false);
+      // Clear any pending timeout
+      if (spotifyCardTimeoutRef.current) {
+        clearTimeout(spotifyCardTimeoutRef.current);
+        spotifyCardTimeoutRef.current = null;
+      }
+    }
+    
     const promptEntry: ChatEntry = {
       id: `prompt-${Date.now()}`,
       kind: "prompt",
@@ -211,16 +464,9 @@ export default function App() {
 
     // If not expanded, expand first
     if (!isExpanded) {
-      setIsExpanding(true);
       sky?.expand();
       setIsExpanded(true);
-      // Clear initial entries when starting a new conversation
-      setEntries([]);
-      // Reset expanding state after animation (matches our 400ms animation duration)
-      setTimeout(() => setIsExpanding(false), 450);
     }
-
-    setEntries((prev) => [...prev, promptEntry]);
     setInputValue("");
     setIsProcessing(true);
     accumulatedTextRef.current = "";
@@ -255,9 +501,6 @@ export default function App() {
       ...prev,
     ]);
 
-    // Add empty response entry
-    setEntries((prev) => [...prev, responseEntry]);
-
     // Stream Gemini response
     try {
       await gemini.streamResponse(prompt, {
@@ -269,15 +512,6 @@ export default function App() {
           
           if (chunk.text) {
             accumulatedTextRef.current += chunk.text;
-            
-            // Update entries
-            setEntries((prev) =>
-              prev.map((entry) =>
-                entry.id === `${windowId}-resp`
-                  ? { ...entry, body: accumulatedTextRef.current }
-                  : entry
-              )
-            );
             
             // Update window
             setPromptWindows((prev) =>
@@ -327,9 +561,16 @@ export default function App() {
             sourceLabel: "Sky",
           };
           
-          setEntries((prev) => [...prev, errorEntry]);
           setPromptWindows((prev) =>
-            prev.map((w) => (w.id === windowId ? { ...w, status: "done" } : w)),
+            prev.map((w) =>
+              w.id === windowId
+                ? {
+                    ...w,
+                    status: "done",
+                    entries: [...w.entries, errorEntry],
+                  }
+                : w,
+            ),
           );
         },
       });
@@ -344,47 +585,796 @@ export default function App() {
   // Handle action approval
   const handleActionApprove = async () => {
     if (!pendingAction) {
-      console.warn("⚠️ [App] handleActionApprove called but no pending action");
       return;
     }
 
-    console.log("🚀 [App] User approved action:", {
-      actionId: pendingAction.action.id,
-      actionName: pendingAction.action.name,
-      parameters: pendingAction.parameters,
-    });
+    const { action: pendingActionData, parameters, promptWindowId } = pendingAction;
+    const windowId = promptWindowId || currentWindowIdRef.current;
+    console.log("🔄 [App] handleActionApprove - windowId:", windowId, "promptWindowId:", promptWindowId);
 
-    const action = getAction(pendingAction.action.id);
+    const action = getAction(pendingActionData.id);
     if (!action) {
-      console.error("❌ [App] Action not found in registry:", pendingAction.action.id);
+      console.error("❌ [App] Action not found in registry:", pendingActionData.id);
       setPendingAction(null);
       return;
     }
 
     try {
-      console.log("📤 [App] Executing AppleScript:", {
-        scriptPath: action.scriptPath,
-        parameters: pendingAction.parameters,
-      });
+      const params = applyActionDefaults(action, parameters);
+      let result: { success: boolean; error?: string } = { success: true };
 
-      const result = await sky?.executeAction?.(
-        {
-          actionId: pendingAction.action.id,
-          parameters: pendingAction.parameters,
-        },
-        action.scriptPath,
-      );
+      // Handle Spotify actions differently - they call the Spotify API
+      if (action.category === "spotify") {
+        // Show Spotify card when executing Spotify actions
+        setShowSpotifyCard(true);
 
-      if (result?.success) {
-        console.log("✅ [App] Action executed successfully:", {
-          output: result.output,
-          actionId: pendingAction.action.id,
-        });
+        switch (action.id) {
+          case "spotify-play":
+            await sky?.spotify?.sendCommand?.({ type: "play" });
+            break;
+          case "spotify-pause":
+            await sky?.spotify?.sendCommand?.({ type: "pause" });
+            break;
+          case "spotify-toggle-play":
+            await sky?.spotify?.sendCommand?.({ type: "toggle-play" });
+            break;
+          case "spotify-next":
+            await sky?.spotify?.sendCommand?.({ type: "next" });
+            break;
+          case "spotify-previous":
+            await sky?.spotify?.sendCommand?.({ type: "previous" });
+            break;
+          case "spotify-set-volume":
+            if (typeof params.level === "number") {
+              await sky?.spotify?.sendCommand?.({ type: "set-volume", value: params.level });
+            } else {
+              result = { success: false, error: "Volume level must be a number" };
+            }
+            break;
+          case "spotify-search":
+            // Spotify search requires UI integration to display results
+            // The search can be performed via the Spotify API, but results need to be displayed in the UI
+            console.log("Spotify search requested:", params.query, params.category);
+            result = { success: false, error: "Spotify search requires UI integration. Use the Spotify control card." };
+            break;
+          case "spotify-play-track":
+            if (typeof params.uri === "string") {
+              // Determine if it's a track or context (album/playlist)
+              const uriType = params.uri.split(":")[1];
+              await sky?.spotify?.playUri?.({
+                type: uriType === "track" ? "track" : "context",
+                uri: params.uri,
+              });
+            } else {
+              result = { success: false, error: "URI must be a string" };
+            }
+            break;
+          default:
+            result = { success: false, error: `Unknown Spotify action: ${action.id}` };
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Spotify action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "apple-notes") {
+        // Handle Apple Notes actions
+        if (!appleNotes.isAvailable) {
+          result = { success: false, error: "Apple Notes integration is not available" };
+        } else {
+          switch (action.id) {
+            case "apple-notes-search":
+              if (typeof params.query === "string") {
+                const searchResult = await appleNotes.search(params.query);
+                if (!searchResult.success) {
+                  result = { success: false, error: searchResult.error };
+                  addActionResult(`Failed to search notes: ${searchResult.error}`, true);
+                } else {
+                  const noteCount = searchResult.notes.length;
+                  console.log("✅ [App] Apple Notes search completed:", noteCount, "notes found");
+                  if (noteCount > 0) {
+                    const noteList = searchResult.notes.slice(0, 10).map((n, i) => `${i + 1}. ${n.title}`).join("\n");
+                    const moreText = noteCount > 10 ? `\n\n... and ${noteCount - 10} more note${noteCount - 10 > 1 ? "s" : ""}` : "";
+                    const resultText = `Found ${noteCount} note${noteCount > 1 ? "s" : ""} matching "${params.query}":\n\n${noteList}${moreText}`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  } else {
+                    const resultText = `No notes found matching "${params.query}".`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                }
+              } else {
+                result = { success: false, error: "Query must be a string" };
+                addActionResult("Error: Query must be a string", true);
+              }
+              break;
+            case "apple-notes-create":
+              const createResult = await appleNotes.create({
+                content: typeof params.content === "string" ? params.content : undefined,
+                text: typeof params.text === "string" ? params.text : undefined,
+              });
+              if (!createResult.success) {
+                result = { success: false, error: createResult.error };
+                addActionResult(`Failed to create note: ${createResult.error}`, true);
+              } else {
+                console.log("✅ [App] Apple Note created:", createResult.noteId);
+                const resultText = `Note created successfully${createResult.noteId ? ` (ID: ${createResult.noteId})` : ""}.`;
+                await sendActionResultToGemini(action.name, resultText, windowId);
+              }
+              break;
+            case "apple-notes-get-content":
+              if (typeof params.noteId === "string") {
+                const contentResult = await appleNotes.getContent(params.noteId);
+                if (!contentResult.success) {
+                  result = { success: false, error: contentResult.error };
+                  addActionResult(`Failed to get note content: ${contentResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Note content retrieved");
+                  const contentPreview = contentResult.content ? contentResult.content.substring(0, 200) + (contentResult.content.length > 200 ? "..." : "") : "No content";
+                  const resultText = `Note content:\n\n${contentPreview}`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Note ID must be a string" };
+                addActionResult("Error: Note ID must be a string", true);
+              }
+              break;
+            case "apple-notes-update":
+              if (typeof params.noteId === "string" && typeof params.content === "string") {
+                const updateResult = await appleNotes.update({
+                  noteId: params.noteId,
+                  content: params.content,
+                });
+                if (!updateResult.success) {
+                  result = { success: false, error: updateResult.error };
+                  addActionResult(`Failed to update note: ${updateResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Note updated");
+                  const resultText = `Note updated successfully.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Note ID and content must be strings" };
+                addActionResult("Error: Note ID and content must be strings", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Apple Notes action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Apple Notes action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "apple-maps") {
+        // Handle Apple Maps actions
+        if (!appleMaps.isAvailable) {
+          result = { success: false, error: "Apple Maps integration is not available" };
+        } else {
+          switch (action.id) {
+            case "apple-maps-search":
+              if (typeof params.query === "string") {
+                const searchResult = await appleMaps.search(params.query);
+                if (!searchResult.success) {
+                  result = { success: false, error: searchResult.error };
+                  addActionResult(`Failed to search maps: ${searchResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Maps search completed");
+                  const resultText = `Opened Apple Maps search for "${params.query}".`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Query must be a string" };
+                addActionResult("Error: Query must be a string", true);
+              }
+              break;
+            case "apple-maps-directions":
+              if (typeof params.destination === "string") {
+                const directionsResult = await appleMaps.directions({
+                  destination: params.destination,
+                  origin: typeof params.origin === "string" ? params.origin : undefined,
+                  mode: typeof params.mode === "string" ? params.mode : undefined,
+                });
+                if (!directionsResult.success) {
+                  result = { success: false, error: directionsResult.error };
+                  addActionResult(`Failed to get directions: ${directionsResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Maps directions opened");
+                  const originText = params.origin ? ` from ${params.origin}` : "";
+                  const resultText = `Opened directions${originText} to ${params.destination} in Apple Maps.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Destination must be a string" };
+                addActionResult("Error: Destination must be a string", true);
+              }
+              break;
+            case "apple-maps-directions-home":
+              if (typeof params.homeAddress === "string") {
+                const homeResult = await appleMaps.directionsHome({
+                  homeAddress: params.homeAddress,
+                  mode: typeof params.mode === "string" ? params.mode : undefined,
+                });
+                if (!homeResult.success) {
+                  result = { success: false, error: homeResult.error };
+                  addActionResult(`Failed to get directions home: ${homeResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Maps directions home opened");
+                  const resultText = `Opened directions to home (${params.homeAddress}) in Apple Maps.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Home address must be a string" };
+                addActionResult("Error: Home address must be a string", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Apple Maps action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Apple Maps action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "apple-reminders") {
+        // Handle Apple Reminders actions
+        console.log("📋 [App] Handling Apple Reminders action:", action.id, params);
+        
+        if (!appleReminders.isAvailable) {
+          console.error("❌ [App] Apple Reminders integration is not available");
+          result = { success: false, error: "Apple Reminders integration is not available" };
+        } else {
+          switch (action.id) {
+            case "apple-reminders-create":
+              console.log("📝 [App] Creating reminder with params:", params);
+              if (typeof params.title === "string") {
+                const createPayload = {
+                  title: params.title,
+                  listName: typeof params.listName === "string" ? params.listName : undefined,
+                  dueDate: typeof params.dueDate === "string" ? params.dueDate : undefined,
+                  priority: typeof params.priority === "string" ? params.priority : undefined,
+                  notes: typeof params.notes === "string" ? params.notes : undefined,
+                };
+                console.log("📝 [App] Calling appleReminders.create with payload:", createPayload);
+                
+                const createResult = await appleReminders.create(createPayload);
+                
+                console.log("📝 [App] Create result:", createResult);
+                
+                if (!createResult.success) {
+                  result = { success: false, error: createResult.error };
+                  console.error("❌ [App] Failed to create reminder:", createResult.error);
+                  addActionResult(`Failed to create reminder: ${createResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Reminder created:", createResult.reminderId);
+                  const resultText = `Reminder "${params.title}" created successfully${createResult.reminderId ? ` (ID: ${createResult.reminderId})` : ""}.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                console.error("❌ [App] Title is not a string:", typeof params.title, params.title);
+                result = { success: false, error: "Title must be a string" };
+              }
+              break;
+            case "apple-reminders-list":
+              const listResult = await appleReminders.list({
+                listName: typeof params.listName === "string" ? params.listName : undefined,
+                completed: typeof params.completed === "boolean" ? params.completed : undefined,
+              });
+              if (!listResult.success) {
+                result = { success: false, error: listResult.error };
+                addActionResult(`Failed to list reminders: ${listResult.error}`, true);
+              } else {
+                const reminderCount = listResult.reminders?.length || 0;
+                console.log("✅ [App] Apple Reminders listed:", reminderCount, "reminders");
+                if (reminderCount > 0) {
+                  const reminderList = listResult.reminders!.slice(0, 10).map((r, i) => `${i + 1}. ${r.name || "Untitled"}${r.dueDate ? ` (due: ${r.dueDate})` : ""}`).join("\n");
+                  const moreText = reminderCount > 10 ? `\n\n... and ${reminderCount - 10} more reminder${reminderCount - 10 > 1 ? "s" : ""}` : "";
+                  const resultText = `Found ${reminderCount} reminder${reminderCount > 1 ? "s" : ""}:\n\n${reminderList}${moreText}`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                } else {
+                  const resultText = `No reminders found.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              }
+              break;
+            case "apple-reminders-complete":
+              if (typeof params.reminderId === "string") {
+                const completeResult = await appleReminders.complete(params.reminderId);
+                if (!completeResult.success) {
+                  result = { success: false, error: completeResult.error };
+                  addActionResult(`Failed to complete reminder: ${completeResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Reminder completed");
+                  const resultText = `Reminder marked as completed.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Reminder ID must be a string" };
+                addActionResult("Error: Reminder ID must be a string", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Apple Reminders action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Apple Reminders action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "apple-stocks") {
+        // Handle Apple Stocks actions
+        if (!appleStocks.isAvailable) {
+          result = { success: false, error: "Apple Stocks integration is not available" };
+        } else {
+          switch (action.id) {
+            case "apple-stocks-search":
+              if (typeof params.ticker === "string") {
+                const searchResult = await appleStocks.search(params.ticker);
+                if (!searchResult.success) {
+                  result = { success: false, error: searchResult.error };
+                  addActionResult(`Failed to search stocks: ${searchResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Apple Stocks opened for ticker:", params.ticker);
+                  const resultText = `Opened Apple Stocks for ticker ${params.ticker.toUpperCase()}.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Ticker must be a string" };
+                addActionResult("Error: Ticker must be a string", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Apple Stocks action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Apple Stocks action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "finder") {
+        // Handle Finder actions
+        console.log("📁 [App] Handling Finder action:", action.id, params);
+        
+        if (!finder.isAvailable) {
+          console.error("❌ [App] Finder integration is not available");
+          result = { success: false, error: "Finder integration is not available" };
+        } else {
+          switch (action.id) {
+            case "finder-create-file":
+              if (typeof params.filename === "string") {
+                const createResult = await finder.createFile({
+                  filename: params.filename,
+                  autoOpen: typeof params.autoOpen === "boolean" ? params.autoOpen : undefined,
+                });
+                if (!createResult.success) {
+                  result = { success: false, error: createResult.error };
+                  console.error("❌ [App] Failed to create file:", createResult.error);
+                  addActionResult(`Failed to create file: ${createResult.error}`, true);
+                } else {
+                  console.log("✅ [App] File created:", createResult.filePath);
+                  const resultText = `File created successfully: ${createResult.filePath}`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Filename must be a string" };
+              }
+              break;
+            case "finder-open-file":
+              if (typeof params.path === "string") {
+                const openResult = await finder.openFile({
+                  path: params.path,
+                  application: typeof params.application === "string" ? params.application : undefined,
+                });
+                if (!openResult.success) {
+                  result = { success: false, error: openResult.error };
+                  console.error("❌ [App] Failed to open file:", openResult.error);
+                  addActionResult(`Failed to open file: ${openResult.error}`, true);
+                } else {
+                  console.log("✅ [App] File opened successfully");
+                  const appText = params.application ? ` with ${params.application}` : "";
+                  const resultText = `File opened successfully${appText}: ${params.path}`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Path must be a string" };
+              }
+              break;
+            case "finder-move-to-folder":
+              if (typeof params.destination === "string") {
+                let filePaths: string[] = [];
+                
+                // Get file paths from parameter or selected files
+                if (typeof params.filePaths === "string") {
+                  filePaths = params.filePaths.split(",").map(p => p.trim()).filter(p => p.length > 0);
+                } else {
+                  // Try to get selected files from Finder
+                  const selectedResult = await finder.getSelectedFiles();
+                  if (selectedResult.success && selectedResult.files) {
+                    filePaths = selectedResult.files;
+                  } else {
+                    result = { success: false, error: selectedResult.error || "No files selected in Finder" };
+                    break;
+                  }
+                }
+
+                if (filePaths.length === 0) {
+                  result = { success: false, error: "No files to move" };
+                } else {
+                  const moveResult = await finder.moveToFolder({
+                    destination: params.destination,
+                    filePaths,
+                  });
+                  if (!moveResult.success) {
+                    result = { success: false, error: moveResult.error };
+                    console.error("❌ [App] Failed to move files:", moveResult.error);
+                    addActionResult(`Failed to move files: ${moveResult.error}`, true);
+                  } else {
+                    const movedCount = moveResult.movedCount || 0;
+                    console.log(`✅ [App] Moved ${movedCount} file(s) to folder`);
+                    const resultText = `Moved ${movedCount} file${movedCount > 1 ? "s" : ""} to ${params.destination}.`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                }
+              } else {
+                result = { success: false, error: "Destination must be a string" };
+              }
+              break;
+            case "finder-copy-to-folder":
+              if (typeof params.destination === "string") {
+                let filePaths: string[] = [];
+                
+                // Get file paths from parameter or selected files
+                if (typeof params.filePaths === "string") {
+                  filePaths = params.filePaths.split(",").map(p => p.trim()).filter(p => p.length > 0);
+                } else {
+                  // Try to get selected files from Finder
+                  const selectedResult = await finder.getSelectedFiles();
+                  if (selectedResult.success && selectedResult.files) {
+                    filePaths = selectedResult.files;
+                  } else {
+                    result = { success: false, error: selectedResult.error || "No files selected in Finder" };
+                    break;
+                  }
+                }
+
+                if (filePaths.length === 0) {
+                  result = { success: false, error: "No files to copy" };
+                } else {
+                  const copyResult = await finder.copyToFolder({
+                    destination: params.destination,
+                    filePaths,
+                  });
+                  if (!copyResult.success) {
+                    result = { success: false, error: copyResult.error };
+                    console.error("❌ [App] Failed to copy files:", copyResult.error);
+                    addActionResult(`Failed to copy files: ${copyResult.error}`, true);
+                  } else {
+                    const copiedCount = copyResult.copiedCount || 0;
+                    console.log(`✅ [App] Copied ${copiedCount} file(s) to folder`);
+                    const resultText = `Copied ${copiedCount} file${copiedCount > 1 ? "s" : ""} to ${params.destination}.`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                }
+              } else {
+                result = { success: false, error: "Destination must be a string" };
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Finder action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Finder action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "browser-bookmarks") {
+        // Handle Browser Bookmarks actions
+        console.log("🔖 [App] Handling Browser Bookmarks action:", action.id, params);
+        
+        if (!browserBookmarks.isAvailable) {
+          console.error("❌ [App] Browser Bookmarks integration is not available");
+          result = { success: false, error: "Browser Bookmarks integration is not available" };
+        } else {
+          switch (action.id) {
+            case "browser-bookmarks-search":
+              if (typeof params.query === "string") {
+                const searchResult = await browserBookmarks.search(
+                  params.query,
+                  typeof params.browser === "string" ? params.browser : undefined,
+                );
+                if (!searchResult.success) {
+                  result = { success: false, error: searchResult.error };
+                  console.error("❌ [App] Failed to search bookmarks:", searchResult.error);
+                  addActionResult(`Failed to search bookmarks: ${searchResult.error}`, true);
+                } else {
+                  const bookmarkCount = searchResult.bookmarks?.length || 0;
+                  console.log(`✅ [App] Found ${bookmarkCount} bookmarks`);
+                  
+                  if (bookmarkCount > 0) {
+                    const bookmarkList = searchResult.bookmarks!
+                      .slice(0, 10)
+                      .map((b, i) => `${i + 1}. ${b.title}\n   ${b.url} (${b.browser})`)
+                      .join("\n\n");
+                    const moreText = bookmarkCount > 10 ? `\n\n... and ${bookmarkCount - 10} more bookmark${bookmarkCount - 10 > 1 ? "s" : ""}` : "";
+                    const resultText = `Found ${bookmarkCount} bookmark${bookmarkCount > 1 ? "s" : ""} matching "${params.query}":\n\n${bookmarkList}${moreText}`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  } else {
+                    const resultText = `No bookmarks found matching "${params.query}".`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                }
+              } else {
+                result = { success: false, error: "Query must be a string" };
+                addActionResult("Error: Query must be a string", true);
+              }
+              break;
+            case "browser-bookmarks-open":
+              if (typeof params.url === "string") {
+                const openResult = await browserBookmarks.open({
+                  url: params.url,
+                  browser: typeof params.browser === "string" ? params.browser : undefined,
+                });
+                if (!openResult.success) {
+                  result = { success: false, error: openResult.error };
+                  console.error("❌ [App] Failed to open bookmark:", openResult.error);
+                  addActionResult(`Failed to open bookmark: ${openResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Bookmark opened successfully");
+                  const browserText = params.browser ? ` in ${params.browser}` : "";
+                  const resultText = `Opened bookmark${browserText}: ${params.url}`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "URL must be a string" };
+                addActionResult("Error: URL must be a string", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Browser Bookmarks action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Browser Bookmarks action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "browser-history") {
+        // Handle Browser History actions
+        console.log("📜 [App] Handling Browser History action:", action.id, params);
+        
+        if (!browserHistory.isAvailable) {
+          console.error("❌ [App] Browser History integration is not available");
+          result = { success: false, error: "Browser History integration is not available" };
+        } else {
+          switch (action.id) {
+            case "browser-history-search":
+              if (typeof params.query === "string") {
+                const searchResult = await browserHistory.search({
+                  query: params.query,
+                  browser: typeof params.browser === "string" ? params.browser : undefined,
+                  limit: typeof params.limit === "number" ? params.limit : undefined,
+                });
+                if (!searchResult.success) {
+                  result = { success: false, error: searchResult.error };
+                  console.error("❌ [App] Failed to search history:", searchResult.error);
+                  addActionResult(`Failed to search history: ${searchResult.error}`, true);
+                } else {
+                  const entryCount = searchResult.entries?.length || 0;
+                  console.log(`✅ [App] Found ${entryCount} history entries`);
+                  
+                  if (entryCount > 0) {
+                    const historyList = searchResult.entries!
+                      .slice(0, 10)
+                      .map((e, i) => `${i + 1}. ${e.title}\n   ${e.url} (${e.browser})`)
+                      .join("\n\n");
+                    const moreText = entryCount > 10 ? `\n\n... and ${entryCount - 10} more entr${entryCount - 10 > 1 ? "ies" : "y"}` : "";
+                    const resultText = `Found ${entryCount} histor${entryCount > 1 ? "y entries" : "y entry"} matching "${params.query}":\n\n${historyList}${moreText}`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  } else {
+                    const resultText = `No history entries found matching "${params.query}".`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                }
+              } else {
+                result = { success: false, error: "Query must be a string" };
+                addActionResult("Error: Query must be a string", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Browser History action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Browser History action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "browser-tabs") {
+        // Handle Browser Tabs actions
+        console.log("📑 [App] Handling Browser Tabs action:", action.id, params);
+        
+        if (!browserTabs.isAvailable) {
+          console.error("❌ [App] Browser Tabs integration is not available");
+          result = { success: false, error: "Browser Tabs integration is not available" };
+        } else {
+          switch (action.id) {
+            case "browser-tabs-search":
+              if (typeof params.query === "string") {
+                const searchResult = await browserTabs.search(
+                  params.query,
+                  typeof params.browser === "string" ? params.browser : undefined,
+                );
+                if (!searchResult.success) {
+                  result = { success: false, error: searchResult.error };
+                  console.error("❌ [App] Failed to search tabs:", searchResult.error);
+                  addActionResult(`Failed to search tabs: ${searchResult.error}`, true);
+                } else {
+                  const tabCount = searchResult.tabs?.length || 0;
+                  console.log(`✅ [App] Found ${tabCount} tabs`);
+                  
+                  if (tabCount > 0) {
+                    const tabList = searchResult.tabs!
+                      .slice(0, 10)
+                      .map((t, i) => `${i + 1}. ${t.title}\n   ${t.url} (${t.browser}, Window ${t.windowId}, Tab ${t.tabIndex})`)
+                      .join("\n\n");
+                    const moreText = tabCount > 10 ? `\n\n... and ${tabCount - 10} more tab${tabCount - 10 > 1 ? "s" : ""}` : "";
+                    const resultText = `Found ${tabCount} open tab${tabCount > 1 ? "s" : ""} matching "${params.query}":\n\n${tabList}${moreText}`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  } else {
+                    const resultText = `No open tabs found matching "${params.query}".`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                }
+              } else {
+                result = { success: false, error: "Query must be a string" };
+                addActionResult("Error: Query must be a string", true);
+              }
+              break;
+            case "browser-tabs-close":
+              if (
+                typeof params.browser === "string" &&
+                typeof params.windowId === "string" &&
+                typeof params.tabIndex === "number"
+              ) {
+                const closeResult = await browserTabs.close({
+                  browser: params.browser,
+                  windowId: params.windowId,
+                  tabIndex: params.tabIndex,
+                });
+                if (!closeResult.success) {
+                  result = { success: false, error: closeResult.error };
+                  console.error("❌ [App] Failed to close tab:", closeResult.error);
+                  addActionResult(`Failed to close tab: ${closeResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Tab closed successfully");
+                  const resultText = `Closed tab ${params.tabIndex} in ${params.browser} window ${params.windowId} successfully.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Browser, windowId, and tabIndex are required" };
+                addActionResult("Error: Browser, windowId, and tabIndex are required", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Browser Tabs action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Browser Tabs action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
+      } else if (action.category === "browser-profiles") {
+        // Handle Browser Profiles actions
+        console.log("👤 [App] Handling Browser Profiles action:", action.id, params);
+        
+        if (!browserProfiles.isAvailable) {
+          console.error("❌ [App] Browser Profiles integration is not available");
+          result = { success: false, error: "Browser Profiles integration is not available" };
+        } else {
+          switch (action.id) {
+            case "browser-profiles-list":
+              if (typeof params.browser === "string") {
+                const listResult = await browserProfiles.list(params.browser);
+                if (!listResult.success) {
+                  result = { success: false, error: listResult.error };
+                  console.error("❌ [App] Failed to list profiles:", listResult.error);
+                  addActionResult(`Failed to list profiles: ${listResult.error}`, true);
+                } else {
+                  const profileCount = listResult.profiles?.length || 0;
+                  console.log(`✅ [App] Found ${profileCount} profiles`);
+                  
+                  if (profileCount > 0) {
+                    const profileList = listResult.profiles!
+                      .map((p, i) => `${i + 1}. ${p.name} (${p.browser})`)
+                      .join("\n");
+                    const resultText = `Found ${profileCount} ${params.browser} profile${profileCount > 1 ? "s" : ""}:\n\n${profileList}`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  } else {
+                    const resultText = `No profiles found for ${params.browser}.`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                }
+              } else {
+                result = { success: false, error: "Browser must be a string" };
+                addActionResult("Error: Browser must be a string", true);
+              }
+              break;
+            case "browser-profiles-open":
+              if (typeof params.browser === "string" && typeof params.profile === "string") {
+                const openResult = await browserProfiles.open({
+                  browser: params.browser,
+                  profile: params.profile,
+                });
+                if (!openResult.success) {
+                  result = { success: false, error: openResult.error };
+                  console.error("❌ [App] Failed to open profile:", openResult.error);
+                  addActionResult(`Failed to open ${params.browser} with profile "${params.profile}": ${openResult.error}`, true);
+                } else {
+                  console.log("✅ [App] Browser opened with profile successfully");
+                  const resultText = `Opened ${params.browser} with profile "${params.profile}" successfully.`;
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                }
+              } else {
+                result = { success: false, error: "Browser and profile must be strings" };
+                addActionResult("Error: Browser and profile must be strings", true);
+              }
+              break;
+            default:
+              result = { success: false, error: `Unknown Browser Profiles action: ${action.id}` };
+          }
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Browser Profiles action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
       } else {
-        console.error("❌ [App] Action execution failed:", {
-          error: result?.error,
-          actionId: pendingAction.action.id,
-        });
+        // Regular actions that use scripts
+        if (!action.scriptPath) {
+          console.error("❌ [App] Action has no scriptPath:", action.id);
+          setPendingAction(null);
+          return;
+        }
+
+        const result = await sky?.executeAction?.(
+          {
+            actionId: pendingAction.action.id,
+            parameters: applyActionDefaults(action, pendingAction.parameters),
+          },
+          action.scriptPath,
+        );
+
+        if (!result?.success) {
+          console.error("❌ [App] Action execution failed:", {
+            error: result?.error,
+            actionId: pendingAction.action.id,
+          });
+        }
       }
     } catch (error) {
       console.error("❌ [App] Error executing action:", {
@@ -477,6 +1467,8 @@ export default function App() {
       }}
     >
       <ExpandedBackground />
+      {/* Integration cards (Spotify, etc.) positioned in corners to avoid overlap with centered prompt windows */}
+      <SpotifyCardWrapper show={showSpotifyCard} />
       {/* Floating prompt windows stack - always render on top when expanded */}
       <PromptWindowsStack
         windows={promptWindows}

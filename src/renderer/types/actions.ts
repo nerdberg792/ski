@@ -2,7 +2,7 @@ export interface Action {
   id: string;
   name: string;
   description: string;
-  scriptPath: string;
+  scriptPath?: string; // Optional for actions that don't use scripts (e.g., Spotify API calls)
   parameters?: ActionParameter[];
   category?: string;
 }

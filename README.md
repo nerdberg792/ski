@@ -36,10 +36,14 @@ npm install
 
 ### Configuration
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory (see `.env.example` for a template):
 
 ```env
-VITE_GEMINI_API_KEY=your_api_key_here
+VITE_GEMINI_API_KEY=your_gemini_api_key
+
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+SPOTIFY_REDIRECT_URI=http://localhost:5310/callback
 ```
 
 ### Development
@@ -87,6 +91,22 @@ The app includes an extensible action framework that allows the AI to interact w
 - **Toggle Do Not Disturb**: Enable/disable macOS Focus mode
 
 Actions are defined in `src/renderer/lib/actions.ts` and executed via AppleScript files in the `scripts/` directory.
+
+### Spotify Playback Control
+
+- **Authorization Code + PKCE**: Securely connect your Spotify account using a local callback server.
+- **Encrypted Token Store**: Refresh tokens are saved under the Electron `userData` directory so the session survives restarts.
+- **Playback Controls**: Play/pause, previous/next, shuffle, and volume adjustments are exposed in the expanded overlay via shadcn cards.
+- **Status Streaming**: Playback state and device changes are streamed to the renderer over IPC, keeping the UI in sync.
+- **Automatic Device Transfer**: When you hit play, Sky will transfer control to your most recent Spotify device (as long as the Spotify client is open somewhere) so playback starts immediately.
+
+#### Connecting Spotify
+
+1. Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/documentation/web-api) and enable the Web API.
+2. Add `http://localhost:5310/callback` to the app's Redirect URIs.
+3. Copy the client ID/secret and set the environment variables shown above (make sure to keep the secret private).
+4. Restart Sky, expand the overlay, and click **Connect Spotify**. Complete the browser-based authorization flow, then return to the overlay to control playback.
+5. Grant the `user-read-playback-state` and `user-modify-playback-state` scopes so the player can read and control your devices.
 
 ### Task Approval Workflow
 
