@@ -106,14 +106,66 @@ async function getSafariTabs(): Promise<BrowserTab[]> {
 }
 
 /**
- * Get Chrome tabs (reusing existing Chrome tab functionality)
+ * Get Chrome tabs using AppleScript
  */
 async function getChromeTabs(browserName: string = "chrome"): Promise<BrowserTab[]> {
   try {
-    // Use the existing Chrome tab functionality
-    // This would need to be integrated with the existing chrome actions
-    // For now, return empty - Chrome tabs are already handled via chrome-get-open-tabs action
-    return [];
+    const browserAppName = browserName === "chrome" ? "Google Chrome" : 
+                          browserName === "edge" ? "Microsoft Edge" :
+                          browserName === "brave" ? "Brave Browser" :
+                          browserName === "arc" ? "Arc" :
+                          browserName === "vivaldi" ? "Vivaldi" : "Google Chrome";
+
+    const script = `
+      tell application "${browserAppName}"
+        activate
+        set tabList to {}
+        set windowCount to count of windows
+        
+        repeat with w from 1 to windowCount
+          set currentWindow to window w
+          set tabCount to count of tabs of currentWindow
+          
+          repeat with t from 1 to tabCount
+            set currentTab to tab t of currentWindow
+            set tabTitle to title of currentTab as string
+            set tabURL to URL of currentTab as string
+            set tabId to "${browserName}-w" & w & "-t" & t & "|" & tabTitle & "|" & tabURL
+            set end of tabList to tabId
+          end repeat
+        end repeat
+        
+        return tabList
+      end tell
+    `;
+
+    const result = await runAppleScript(script);
+    const tabs: BrowserTab[] = [];
+
+    if (result && result.trim() !== "") {
+      const lines = result.split(", ");
+      for (const line of lines) {
+        if (line && line.includes("|")) {
+          const parts = line.split("|");
+          if (parts.length >= 3) {
+            const idParts = parts[0].split("-");
+            const windowId = idParts[1]?.replace("w", "") || "1";
+            const tabIndex = parseInt(idParts[2]?.replace("t", "") || "1");
+            
+            tabs.push({
+              id: parts[0] || "",
+              title: parts[1]?.trim() || "",
+              url: parts[2]?.trim() || "",
+              windowId,
+              tabIndex,
+              browser: browserName,
+            });
+          }
+        }
+      }
+    }
+
+    return tabs;
   } catch (error) {
     console.error(`Error getting ${browserName} tabs:`, error);
     return [];
@@ -132,7 +184,7 @@ export async function searchTabs(
 
     const allTabs: BrowserTab[] = [];
     const browsersToSearch = browser === "all"
-      ? ["safari", "chrome"]
+      ? ["safari", "chrome", "edge", "brave", "arc", "vivaldi"]
       : [browser.toLowerCase()];
 
     for (const browserName of browsersToSearch) {
@@ -140,9 +192,7 @@ export async function searchTabs(
         if (browserName === "safari") {
           const safariTabs = await getSafariTabs();
           allTabs.push(...safariTabs);
-        } else if (browserName === "chrome") {
-          // Chrome tabs are handled via existing chrome-get-open-tabs action
-          // This is a placeholder
+        } else if (["chrome", "edge", "brave", "arc", "vivaldi"].includes(browserName)) {
           const chromeTabs = await getChromeTabs(browserName);
           allTabs.push(...chromeTabs);
         }
@@ -151,13 +201,17 @@ export async function searchTabs(
       }
     }
 
-    // Simple search - filter by title or URL containing query
-    const queryLower = query.toLowerCase();
-    const filtered = allTabs.filter(
-      (tab) =>
-        tab.title.toLowerCase().includes(queryLower) ||
-        tab.url.toLowerCase().includes(queryLower)
-    );
+    // If query is "all" or empty, return all tabs without filtering
+    const queryLower = query.toLowerCase().trim();
+    let filtered = allTabs;
+    if (queryLower && queryLower !== "all") {
+      // Simple search - filter by title or URL containing query
+      filtered = allTabs.filter(
+        (tab) =>
+          tab.title.toLowerCase().includes(queryLower) ||
+          tab.url.toLowerCase().includes(queryLower)
+      );
+    }
 
     console.log(`✅ [Browser Tabs] Found ${filtered.length} matching tabs`);
     return { success: true, tabs: filtered };

@@ -107,10 +107,44 @@ export default function App() {
     ]);
   };
 
-  // Helper function to add action result to current prompt window
-  const addActionResult = (resultText: string, isError: boolean = false) => {
-    const windowId = currentWindowIdRef.current;
-    if (!windowId) return;
+  // Helper function to add action result to a specific window
+  const addActionResultWithWindowId = (targetWindowId: string | null, resultText: string, isError: boolean = false) => {
+    const windowId = targetWindowId || currentWindowIdRef.current;
+    console.log("🔄 [App] addActionResultWithWindowId called:", { 
+      windowId, 
+      targetWindowId,
+      resultTextLength: resultText.length, 
+      isError,
+      hasWindowId: !!windowId 
+    });
+    
+    if (!windowId) {
+      console.error("❌ [App] No windowId in addActionResultWithWindowId, trying to find most recent window");
+      // Try to use the most recent window
+      setPromptWindows((prev) => {
+        if (prev.length > 0) {
+          const mostRecentWindow = prev[0];
+          console.log("🔄 [App] Using most recent window:", mostRecentWindow.id);
+          const resultEntry: ChatEntry = {
+            id: `${mostRecentWindow.id}-action-result-${Date.now()}`,
+            kind: "response",
+            heading: "",
+            body: resultText,
+            sourceLabel: isError ? "Error" : "Sky",
+          };
+          return prev.map((w) =>
+            w.id === mostRecentWindow.id
+              ? {
+                  ...w,
+                  entries: [...w.entries, resultEntry],
+                }
+              : w
+          );
+        }
+        return prev;
+      });
+      return;
+    }
 
     const resultEntry: ChatEntry = {
       id: `${windowId}-action-result-${Date.now()}`,
@@ -120,16 +154,26 @@ export default function App() {
       sourceLabel: isError ? "Error" : "Sky",
     };
 
-    setPromptWindows((prev) =>
-      prev.map((w) =>
+    console.log("🔄 [App] Adding result entry to window:", windowId);
+    setPromptWindows((prev) => {
+      const windowExists = prev.some(w => w.id === windowId);
+      console.log("🔄 [App] Window exists in promptWindows:", windowExists, "Total windows:", prev.length);
+      const updated = prev.map((w) =>
         w.id === windowId
           ? {
               ...w,
               entries: [...w.entries, resultEntry],
             }
           : w
-      )
-    );
+      );
+      console.log("🔄 [App] Updated prompt windows, checking if window exists:", updated.some(w => w.id === windowId));
+      return updated;
+    });
+  };
+
+  // Helper function to add action result to current prompt window (uses ref)
+  const addActionResult = (resultText: string, isError: boolean = false) => {
+    addActionResultWithWindowId(null, resultText, isError);
   };
 
   // Helper function to send action result back to Gemini for response
@@ -1234,15 +1278,14 @@ export default function App() {
                   
                   if (tabCount > 0) {
                     const tabList = searchResult.tabs!
-                      .slice(0, 10)
                       .map((t, i) => `${i + 1}. ${t.title}\n   ${t.url} (${t.browser}, Window ${t.windowId}, Tab ${t.tabIndex})`)
                       .join("\n\n");
-                    const moreText = tabCount > 10 ? `\n\n... and ${tabCount - 10} more tab${tabCount - 10 > 1 ? "s" : ""}` : "";
-                    const resultText = `Found ${tabCount} open tab${tabCount > 1 ? "s" : ""} matching "${params.query}":\n\n${tabList}${moreText}`;
-                    await sendActionResultToGemini(action.name, resultText, windowId);
+                    const resultText = `Found ${tabCount} open tab${tabCount > 1 ? "s" : ""}${params.query && params.query.toLowerCase() !== "all" ? ` matching "${params.query}"` : ""}:\n\n${tabList}`;
+                    // Just show results, don't send to Gemini
+                    addActionResult(resultText, false);
                   } else {
-                    const resultText = `No open tabs found matching "${params.query}".`;
-                    await sendActionResultToGemini(action.name, resultText, windowId);
+                    const resultText = `No open tabs found${params.query && params.query.toLowerCase() !== "all" ? ` matching "${params.query}"` : ""}.`;
+                    addActionResult(resultText, false);
                   }
                 }
               } else {
@@ -1363,17 +1406,62 @@ export default function App() {
 
         const result = await sky?.executeAction?.(
           {
-            actionId: pendingAction.action.id,
-            parameters: applyActionDefaults(action, pendingAction.parameters),
+            actionId: pendingActionData.id,
+            parameters: applyActionDefaults(action, parameters),
           },
           action.scriptPath,
         );
 
+        console.log("🔄 [App] Script action result:", { 
+          success: result?.success, 
+          hasOutput: !!result?.output, 
+          outputLength: result?.output?.length,
+          actionId: action.id,
+          windowId 
+        });
+
         if (!result?.success) {
           console.error("❌ [App] Action execution failed:", {
             error: result?.error,
-            actionId: pendingAction.action.id,
+            actionId: pendingActionData.id,
           });
+          addActionResultWithWindowId(windowId, `Action failed: ${result?.error || "Unknown error"}`, true);
+        } else {
+          // Handle specific actions that return JSON data
+          if (action.id === "chrome-get-open-tabs" && result?.output) {
+            console.log("🔄 [App] Processing chrome-get-open-tabs output, length:", result.output.length);
+            try {
+              // Parse the JSON output from Chrome tabs script
+              const tabs = JSON.parse(result.output);
+              console.log("🔄 [App] Parsed tabs, count:", tabs.length);
+              if (Array.isArray(tabs) && tabs.length > 0) {
+                // Send to Gemini to format nicely with links and titles only
+                const tabsData = tabs.map((t: any) => ({
+                  title: t.title || "Untitled",
+                  url: t.url || "",
+                }));
+                const resultText = JSON.stringify(tabsData, null, 2);
+                const promptForGemini = `The user asked to list Chrome tabs. Here are ${tabs.length} open tabs in JSON format. Please format this as a clean, readable list with clickable markdown links showing only the titles. Use markdown link format: [Title](URL). Format it nicely with each tab on a new line. Here's the data:\n\n${resultText}`;
+                
+                console.log("🔄 [App] Sending Chrome tabs to Gemini for formatting");
+                await sendActionResultToGemini("List Chrome Tabs", promptForGemini, windowId, false);
+                console.log("✅ [App] Sent Chrome tabs to Gemini for formatting");
+              } else {
+                console.log("🔄 [App] No tabs found");
+                addActionResultWithWindowId(windowId, "No Chrome tabs found.", false);
+              }
+            } catch (parseError) {
+              console.error("❌ [App] Failed to parse Chrome tabs JSON:", parseError);
+              // Fallback: show raw output
+              addActionResultWithWindowId(windowId, `Chrome tabs:\n${result.output}`, false);
+            }
+          } else if (result?.output) {
+            // For other actions with output, show it
+            console.log("🔄 [App] Showing output for other action:", action.id);
+            addActionResultWithWindowId(windowId, result.output, false);
+          } else {
+            console.log("🔄 [App] No output to display for action:", action.id);
+          }
         }
       }
     } catch (error) {
