@@ -643,6 +643,10 @@ export default function App() {
       return;
     }
 
+    // Close the action approval window immediately after approval
+    // Don't wait for async operations to complete
+    setPendingAction(null);
+
     try {
       const params = applyActionDefaults(action, parameters);
       let result: { success: boolean; error?: string } = { success: true };
@@ -1467,11 +1471,13 @@ export default function App() {
     } catch (error) {
       console.error("❌ [App] Error executing action:", {
         error,
-        actionId: pendingAction.action.id,
+        actionId: pendingActionData.id,
       });
+    } finally {
+      // Always close the action approval window after execution completes
+      console.log("🔄 [App] Closing action approval window");
+      setPendingAction(null);
     }
-
-    setPendingAction(null);
   };
 
   const handleActionCancel = () => {

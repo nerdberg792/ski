@@ -41,7 +41,7 @@ async function getSafariHistory(): Promise<BrowserHistoryEntry[]> {
 }
 
 /**
- * Get Chrome-based browser history from History database
+ * Get Chrome-based browser history from History database using SQLite
  */
 async function getChromeHistory(browserName: string = "chrome", limit: number = 20): Promise<BrowserHistoryEntry[]> {
   try {
@@ -58,14 +58,144 @@ async function getChromeHistory(browserName: string = "chrome", limit: number = 
     try {
       await fs.access(historyPath);
     } catch {
+      console.log(`📜 [Browser History] History database not found for ${browserName}`);
       return [];
     }
 
-    // Chrome history is in SQLite format, but reading it requires sqlite3 or similar
-    // For now, return empty array - full implementation would require SQLite library
-    // This is a placeholder that indicates the functionality exists
-    console.log(`📜 [Browser History] History database found for ${browserName}, but SQLite access needed`);
-    return [];
+    // Chrome locks the History database when it's running, so we need to copy it first
+    const tempHistoryPath = path.join(homedir(), `.sky-temp-history-${Date.now()}`);
+    
+    try {
+      // Copy the database to a temp location to avoid locking issues
+      await fs.copyFile(historyPath, tempHistoryPath);
+      
+      // Query the SQLite database using sqlite3 command
+      // Chrome stores history in 'urls' table with columns: id, url, title, visit_count, last_visit_time
+      // Create a temporary SQL file with the commands
+      const query = `SELECT id, url, title, visit_count, last_visit_time FROM urls WHERE hidden = 0 ORDER BY last_visit_time DESC LIMIT ${limit * 2}`;
+      const tempSqlPath = path.join(homedir(), `.sky-temp-sql-${Date.now()}`);
+      const sqlCommands = `.mode list\n.separator |\n${query}`;
+      await fs.writeFile(tempSqlPath, sqlCommands);
+      
+      const sqliteCommand = `sqlite3 "${tempHistoryPath}" < "${tempSqlPath}"`;
+      const { stdout } = await execAsync(sqliteCommand, { timeout: 10000 });
+      
+      // Clean up temp SQL file
+      await fs.unlink(tempSqlPath).catch(() => {});
+      
+      // Clean up temp file
+      await fs.unlink(tempHistoryPath).catch(() => {});
+      
+      const entries: BrowserHistoryEntry[] = [];
+      
+      if (stdout && stdout.trim()) {
+        const lines = stdout.trim().split('\n');
+        for (const line of lines) {
+          if (!line || line.trim() === '') continue;
+          
+          // SQLite outputs pipe-separated values when using .mode list
+          const parts = line.split('|');
+          if (parts.length >= 5) {
+            const id = parts[0]?.trim() || '';
+            const url = parts[1]?.trim() || '';
+            const title = parts[2]?.trim() || '';
+            const visitCount = parseInt(parts[3]?.trim() || '0', 10);
+            const lastVisitTime = parts[4]?.trim() || '';
+            
+            // Convert Chrome timestamp (microseconds since 1601-01-01) to readable date
+            let lastVisitDate = '';
+            if (lastVisitTime) {
+              try {
+                // Chrome timestamp is in microseconds since 1601-01-01
+                // Convert to milliseconds and adjust epoch
+                const chromeEpoch = Date.UTC(1601, 0, 1);
+                const timestamp = parseInt(lastVisitTime, 10) / 1000 + chromeEpoch;
+                const date = new Date(timestamp);
+                lastVisitDate = date.toISOString();
+              } catch {
+                // If conversion fails, use raw value
+                lastVisitDate = lastVisitTime;
+              }
+            }
+            
+            entries.push({
+              id: `${browserName}-${id}`,
+              url,
+              title: title || url,
+              visitCount,
+              lastVisitTime: lastVisitDate,
+              browser: browserName,
+            });
+          }
+        }
+      }
+      
+      console.log(`📜 [Browser History] Retrieved ${entries.length} entries from ${browserName}`);
+      return entries;
+    } catch (copyError) {
+      // If copy fails, try reading directly (might work if Chrome is closed)
+      console.log(`📜 [Browser History] Could not copy database, trying direct access`);
+      
+      try {
+        const query = `SELECT id, url, title, visit_count, last_visit_time FROM urls WHERE hidden = 0 ORDER BY last_visit_time DESC LIMIT ${limit * 2}`;
+        const tempSqlPath = path.join(homedir(), `.sky-temp-sql-${Date.now()}`);
+        const sqlCommands = `.mode list\n.separator |\n${query}`;
+        await fs.writeFile(tempSqlPath, sqlCommands);
+        
+        const sqliteCommand = `sqlite3 "${historyPath}" < "${tempSqlPath}"`;
+        const { stdout } = await execAsync(sqliteCommand, { timeout: 10000 });
+        
+        // Clean up temp SQL file
+        await fs.unlink(tempSqlPath).catch(() => {});
+        
+        const entries: BrowserHistoryEntry[] = [];
+        
+        if (stdout && stdout.trim()) {
+          const lines = stdout.trim().split('\n');
+          for (const line of lines) {
+            if (!line || line.trim() === '') continue;
+            
+            const parts = line.split('|');
+            if (parts.length >= 5) {
+              const id = parts[0]?.trim() || '';
+              const url = parts[1]?.trim() || '';
+              const title = parts[2]?.trim() || '';
+              const visitCount = parseInt(parts[3]?.trim() || '0', 10);
+              const lastVisitTime = parts[4]?.trim() || '';
+              
+              let lastVisitDate = '';
+              if (lastVisitTime) {
+                try {
+                  const chromeEpoch = Date.UTC(1601, 0, 1);
+                  const timestamp = parseInt(lastVisitTime, 10) / 1000 + chromeEpoch;
+                  const date = new Date(timestamp);
+                  lastVisitDate = date.toISOString();
+                } catch {
+                  lastVisitDate = lastVisitTime;
+                }
+              }
+              
+              entries.push({
+                id: `${browserName}-${id}`,
+                url,
+                title: title || url,
+                visitCount,
+                lastVisitTime: lastVisitDate,
+                browser: browserName,
+              });
+            }
+          }
+        }
+        
+        console.log(`📜 [Browser History] Retrieved ${entries.length} entries from ${browserName} (direct access)`);
+        return entries;
+      } catch (directError) {
+        console.error(`📜 [Browser History] Failed to read ${browserName} history:`, directError);
+        // Clean up temp file if it exists
+        await fs.unlink(tempHistoryPath).catch(() => {});
+        return [];
+      }
+    }
   } catch (error) {
     console.error(`Error getting ${browserName} history:`, error);
     return [];

@@ -48,49 +48,19 @@ export interface BrowserBookmark {
 
 /**
  * Get Safari bookmarks using AppleScript
+ * Note: Safari bookmarks via AppleScript are limited and unreliable.
+ * For better results, use Chrome-based browsers which read from JSON files.
  */
 async function getSafariBookmarks(): Promise<BrowserBookmark[]> {
   try {
-    const script = `
-      tell application "Safari"
-        activate
-        set bookmarkList to {}
-        set allBookmarks to every bookmark of bookmarks bar
-        
-        repeat with aBookmark in allBookmarks
-          try
-            set bookmarkTitle to name of aBookmark as string
-            set bookmarkURL to URL of aBookmark as string
-            set bookmarkId to (bookmarkTitle & "|" & bookmarkURL) as string
-            set end of bookmarkList to bookmarkId
-          end try
-        end repeat
-        
-        return bookmarkList
-      end tell
-    `;
-
-    const result = await runAppleScript(script);
-    const bookmarks: BrowserBookmark[] = [];
-
-    if (result && result.trim() !== "") {
-      const lines = result.split(", ");
-      for (const line of lines) {
-        if (line && line.includes("|")) {
-          const parts = line.split("|");
-          if (parts.length >= 2) {
-            bookmarks.push({
-              id: `safari-${parts[0]}-${Date.now()}`,
-              title: parts[0]?.trim() || "",
-              url: parts[1]?.trim() || "",
-              browser: "safari",
-            });
-          }
-        }
-      }
-    }
-
-    return bookmarks;
+    // Safari's AppleScript dictionary for bookmarks is very limited
+    // We can try to access bookmarks via the reading list or use a simpler approach
+    // For now, we'll return empty and rely on Chrome-based browsers
+    // Safari bookmarks would require accessing the Safari bookmarks.plist file directly
+    // which is more complex and may require additional permissions
+    
+    console.log("📖 [Browser Bookmarks] Safari bookmarks via AppleScript are limited, skipping");
+    return [];
   } catch (error) {
     console.error("Error getting Safari bookmarks:", error);
     return [];
