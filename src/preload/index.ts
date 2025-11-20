@@ -315,6 +315,11 @@ const api = {
       return ipcRenderer.invoke("browser-profiles:open", payload);
     },
   },
+  exa: {
+    search(query: string): Promise<{ success?: boolean; error?: string; results?: Array<{ url: string; title: string; text?: string; publishedDate?: string }>; query: string }> {
+      return ipcRenderer.invoke("exa:search", { query });
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("sky", api);

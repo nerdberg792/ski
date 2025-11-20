@@ -17,6 +17,7 @@ import * as browserBookmarks from "./browser-bookmarks";
 import * as browserHistory from "./browser-history";
 import * as browserTabs from "./browser-tabs";
 import * as browserProfiles from "./browser-profiles";
+import * as exaSearch from "./exa-search";
 import type {
   SpotifyAuthStatus,
   SpotifyPlaybackCommand,
@@ -219,6 +220,14 @@ app.whenReady().then(async () => {
     console.log("GEMINI_API_KEY found:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
   } else {
     console.warn("GEMINI_API_KEY not found in environment variables");
+  }
+
+  // Initialize Exa if API key is present
+  if (process.env.EXA_API_KEY) {
+    console.log("EXA_API_KEY found, initializing Exa client");
+    exaSearch.initializeExa(process.env.EXA_API_KEY);
+  } else {
+    console.warn("EXA_API_KEY not found in environment variables");
   }
 
   const spotifyConfig = {
@@ -749,6 +758,16 @@ app.whenReady().then(async () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { success: false, error: message };
+    }
+  });
+
+  // Exa Web Search IPC handler
+  ipcMain.handle("exa:search", async (_, payload: { query: string }) => {
+    try {
+      return await exaSearch.searchWeb(payload.query);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message, results: [], query: payload.query };
     }
   });
 

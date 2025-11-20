@@ -318,7 +318,35 @@ You have access to Browser Profiles functions that you can call directly. When u
 - User: "Launch Firefox profile Personal" → Call browser-profiles-open with browser: "firefox", profile: "Personal"
 `;
 
-  return `${spotifyCapabilities}\n\n${appleNotesCapabilities}\n\n${appleMapsCapabilities}\n\n${appleRemindersCapabilities}\n\n${appleStocksCapabilities}\n\n${finderCapabilities}\n\n${browserBookmarksCapabilities}\n\n${browserHistoryCapabilities}\n\n${browserTabsCapabilities}\n\n${browserProfilesCapabilities}\n\nUser query: ${basePrompt}`;
+  const exaSearchCapabilities = `
+## Exa Web Search Capabilities
+
+You have access to Exa web search, a neural search engine built for AI. When users ask about current events, latest information, recent developments, or need to search the web, you can use this function tool:
+
+**Available Exa Search Functions:**
+- exa-websearch: Search the web using Exa's neural search technology - requires "query" (string)
+
+**Important Notes:**
+- Exa uses neural search to understand the meaning of queries, not just keywords
+- Returns up to 5 high-quality results with URLs, titles, and text content
+- Best for finding current information, recent developments, and research
+- Always cite sources by mentioning the URLs and titles from search results
+- Use this when users ask about: latest news, recent events, current information, research topics, or "search for..."
+
+**Example Usage:**
+- User: "What's the latest news about AI?" → Call exa-websearch with query: "latest AI news"
+- User: "Search for recent developments in quantum computing" → Call exa-websearch with query: "recent quantum computing developments"
+- User: "What are the latest features in React 19?" → Call exa-websearch with query: "React 19 latest features"
+- User: "Find information about James Webb Space Telescope" → Call exa-websearch with query: "James Webb Space Telescope discoveries"
+- User: "What's happening with climate change?" → Call exa-websearch with query: "climate change latest news"
+
+**Response Format:**
+- Always list the sources with their titles and URLs
+- Summarize the key information from the search results
+- Cite specific sources when mentioning facts
+`;
+
+  return `${spotifyCapabilities}\n\n${appleNotesCapabilities}\n\n${appleMapsCapabilities}\n\n${appleRemindersCapabilities}\n\n${appleStocksCapabilities}\n\n${finderCapabilities}\n\n${browserBookmarksCapabilities}\n\n${browserHistoryCapabilities}\n\n${browserTabsCapabilities}\n\n${browserProfilesCapabilities}\n\n${exaSearchCapabilities}\n\nUser query: ${basePrompt}`;
 }
 
 export interface ConversationHistory {

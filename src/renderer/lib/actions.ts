@@ -841,6 +841,23 @@ const finderFileActionsActions: Action[] = [
   },
 ];
 
+const exaSearchActions: Action[] = [
+  {
+    id: "exa-websearch",
+    name: "Search Web with Exa",
+    description: "Use Exa for the most accurate and latest web results for LLMs. Search the web using neural search technology.",
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "Search query for Exa web search",
+        required: true,
+      },
+    ],
+    category: "web-search",
+  },
+];
+
 const browserBookmarksActions: Action[] = [
   {
     id: "browser-bookmarks-search",
@@ -1013,6 +1030,7 @@ const registeredActions: Action[] = [
   ...appleStocksActions,
   ...finderUtilsActions,
   ...finderFileActionsActions,
+  ...exaSearchActions,
   ...browserBookmarksActions,
   ...browserHistoryActions,
   ...browserTabsActions,

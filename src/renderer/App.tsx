@@ -1743,6 +1743,56 @@ export default function App() {
             actionId: pendingAction.action.id,
           });
         }
+      } else if (action.category === "web-search") {
+        // Handle Exa Web Search actions
+        console.log("🔍 [App] Handling Exa Web Search action:", action.id, params);
+
+        switch (action.id) {
+          case "exa-websearch":
+            if (typeof params.query === "string") {
+              try {
+                const searchResult = await sky?.exa?.search?.(params.query);
+                if (searchResult && !searchResult.error) {
+                  const resultCount = searchResult.results?.length || 0;
+                  console.log(`✅ [App] Exa search completed: ${resultCount} results found`);
+
+                  if (resultCount > 0) {
+                    // Format search results for Gemini
+                    const formattedResults = searchResult.results!
+                      .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   URL: ${r.url}\n   ${r.text ? r.text.substring(0, 200) + (r.text.length > 200 ? "..." : "") : "No preview available"}`)
+                      .join("\n\n");
+
+                    const resultText = `Found ${resultCount} result${resultCount > 1 ? "s" : ""} for "${params.query}":\n\n${formattedResults}\n\nSources:\n${searchResult.results!.map((r: any, i: number) => `[${i + 1}] ${r.url}`).join("\n")}`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  } else {
+                    const resultText = `No results found for "${params.query}".`;
+                    await sendActionResultToGemini(action.name, resultText, windowId);
+                  }
+                } else {
+                  result = { success: false, error: searchResult?.error || "Search failed" };
+                  console.error("❌ [App] Exa search failed:", searchResult?.error);
+                  addActionResult(`Failed to search: ${searchResult?.error}`, true);
+                }
+              } catch (error) {
+                result = { success: false, error: error instanceof Error ? error.message : String(error) };
+                console.error("❌ [App] Exa search error:", error);
+                addActionResult(`Search error: ${result.error}`, true);
+              }
+            } else {
+              result = { success: false, error: "Query must be a string" };
+              addActionResult("Error: Query must be a string", true);
+            }
+            break;
+          default:
+            result = { success: false, error: `Unknown web search action: ${action.id}` };
+        }
+
+        if (!result.success) {
+          console.error("❌ [App] Exa Web Search action failed:", {
+            error: result.error,
+            actionId: pendingAction.action.id,
+          });
+        }
       } else {
         // Regular actions that use scripts
         if (!action.scriptPath) {
