@@ -1866,12 +1866,8 @@ export default function App() {
         <div className="relative flex h-full w-full items-center gap-1 pl-2 pr-2 py-1 z-10 overflow-hidden" style={{ WebkitAppRegion: "drag" } as React.CSSProperties}>
           <div
             onClick={() => {
-              // Toggle input: if visible, blur it; if hidden, focus it
-              if (isInputVisible) {
-                inputRef.current?.blur();
-              } else {
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }
+              // Always focus input when clicking logo
+              requestAnimationFrame(() => inputRef.current?.focus());
             }}
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             className="cursor-pointer"
