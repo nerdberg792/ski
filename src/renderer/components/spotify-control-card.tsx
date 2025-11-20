@@ -60,11 +60,11 @@ export function SpotifyControlCard() {
   const disabled = !status.connected || !isConfigured;
 
   return (
-    <Card className="w-full max-w-xs border-white/10 bg-white/10">
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className="w-full max-w-xs border-white/30 bg-black/60 backdrop-blur-2xl shadow-2xl rounded-2xl">
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
         <div>
-          <CardTitle className="text-base">Spotify</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-base font-semibold text-white">Spotify</CardTitle>
+          <CardDescription className="text-white/70 text-xs">
             {status.connected ? "Playback controls" : "Connect your account"}
           </CardDescription>
         </div>

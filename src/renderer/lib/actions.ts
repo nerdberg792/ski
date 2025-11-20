@@ -211,23 +211,23 @@ const chromeActions: Action[] = [
 ];
 
 const spotifyActions: Action[] = [
+  // Basic Playback Controls (AppleScript)
   {
     id: "spotify-play",
     name: "Play Spotify",
-    description: "Resume or start playback on the active Spotify device",
+    description: "Resume or start playback on Spotify",
     category: "spotify",
-    // No scriptPath - handled via Spotify API
   },
   {
     id: "spotify-pause",
     name: "Pause Spotify",
-    description: "Pause playback on the active Spotify device",
+    description: "Pause playback on Spotify",
     category: "spotify",
   },
   {
     id: "spotify-toggle-play",
-    name: "Toggle Spotify Play/Pause",
-    description: "Toggle between play and pause on the active Spotify device",
+    name: "Toggle Play/Pause",
+    description: "Toggle between play and pause on Spotify",
     category: "spotify",
   },
   {
@@ -243,8 +243,15 @@ const spotifyActions: Action[] = [
     category: "spotify",
   },
   {
+    id: "spotify-current-track",
+    name: "Get Current Track",
+    description: "Get information about the currently playing track",
+    category: "spotify",
+  },
+  // Volume Controls (AppleScript)
+  {
     id: "spotify-set-volume",
-    name: "Set Spotify Volume",
+    name: "Set Volume",
     description: "Set the volume level for Spotify playback (0-100)",
     parameters: [
       {
@@ -256,6 +263,137 @@ const spotifyActions: Action[] = [
     ],
     category: "spotify",
   },
+  {
+    id: "spotify-increase-volume",
+    name: "Increase Volume",
+    description: "Increase Spotify volume by a step (default 10)",
+    parameters: [
+      {
+        name: "step",
+        type: "number",
+        description: "Volume step (default 10)",
+        default: 10,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-decrease-volume",
+    name: "Decrease Volume",
+    description: "Decrease Spotify volume by a step (default 10)",
+    parameters: [
+      {
+        name: "step",
+        type: "number",
+        description: "Volume step (default 10)",
+        default: 10,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-volume-0",
+    name: "Mute Volume",
+    description: "Set Spotify volume to 0% (mute)",
+    category: "spotify",
+  },
+  {
+    id: "spotify-volume-25",
+    name: "Set Volume to 25%",
+    description: "Set Spotify volume to 25%",
+    category: "spotify",
+  },
+  {
+    id: "spotify-volume-50",
+    name: "Set Volume to 50%",
+    description: "Set Spotify volume to 50%",
+    category: "spotify",
+  },
+  {
+    id: "spotify-volume-75",
+    name: "Set Volume to 75%",
+    description: "Set Spotify volume to 75%",
+    category: "spotify",
+  },
+  {
+    id: "spotify-volume-100",
+    name: "Set Volume to 100%",
+    description: "Set Spotify volume to 100%",
+    category: "spotify",
+  },
+  // Playback Controls (AppleScript)
+  {
+    id: "spotify-toggle-shuffle",
+    name: "Toggle Shuffle",
+    description: "Toggle shuffle mode on/off",
+    category: "spotify",
+  },
+  {
+    id: "spotify-toggle-repeat",
+    name: "Toggle Repeat",
+    description: "Toggle repeat mode on/off",
+    category: "spotify",
+  },
+  {
+    id: "spotify-forward-seconds",
+    name: "Forward X Seconds",
+    description: "Skip forward by specified seconds",
+    parameters: [
+      {
+        name: "seconds",
+        type: "number",
+        description: "Number of seconds to skip forward",
+        required: true,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-backward-seconds",
+    name: "Backward X Seconds",
+    description: "Skip backward by specified seconds",
+    parameters: [
+      {
+        name: "seconds",
+        type: "number",
+        description: "Number of seconds to skip backward",
+        required: true,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-skip-15",
+    name: "Skip 15 Seconds",
+    description: "Skip forward 15 seconds",
+    category: "spotify",
+  },
+  {
+    id: "spotify-back-15",
+    name: "Back 15 Seconds",
+    description: "Skip backward 15 seconds",
+    category: "spotify",
+  },
+  {
+    id: "spotify-backward-to-beginning",
+    name: "Go to Beginning",
+    description: "Go back to the beginning of the current track",
+    category: "spotify",
+  },
+  // Utility Actions (AppleScript)
+  {
+    id: "spotify-copy-url",
+    name: "Copy Track URL",
+    description: "Copy the Spotify URL of the current track to clipboard",
+    category: "spotify",
+  },
+  {
+    id: "spotify-copy-artist-title",
+    name: "Copy Artist and Title",
+    description: "Copy the artist and title of the current track to clipboard",
+    category: "spotify",
+  },
+  // Web API Actions
   {
     id: "spotify-search",
     name: "Search Spotify",
@@ -271,20 +409,114 @@ const spotifyActions: Action[] = [
         name: "category",
         type: "string",
         description: "Category to search: tracks, albums, artists, playlists, shows, episodes, or all",
-        required: false,
+        default: "all",
       },
     ],
     category: "spotify",
   },
   {
     id: "spotify-play-track",
-    name: "Play Spotify Track",
+    name: "Play Track/Album/Playlist",
     description: "Play a specific track, album, or playlist by URI",
     parameters: [
       {
         name: "uri",
         type: "string",
         description: "Spotify URI (e.g., spotify:track:4iV5W9uYEdYUVa79Axb7Rh)",
+        required: true,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-queue-track",
+    name: "Queue Track",
+    description: "Add a track to the queue",
+    parameters: [
+      {
+        name: "uri",
+        type: "string",
+        description: "Spotify track URI",
+        required: true,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-get-library",
+    name: "Get My Library",
+    description: "Get your saved tracks, albums, playlists, shows, and episodes",
+    category: "spotify",
+  },
+  {
+    id: "spotify-get-playlists",
+    name: "Get My Playlists",
+    description: "Get all your playlists",
+    parameters: [
+      {
+        name: "limit",
+        type: "number",
+        description: "Maximum number of playlists to return",
+        default: 50,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-get-queue",
+    name: "Get Queue",
+    description: "Get the current playback queue",
+    category: "spotify",
+  },
+  {
+    id: "spotify-get-devices",
+    name: "Get Devices",
+    description: "Get available Spotify devices",
+    category: "spotify",
+  },
+  {
+    id: "spotify-get-currently-playing",
+    name: "Get Currently Playing",
+    description: "Get the currently playing track via Web API",
+    category: "spotify",
+  },
+  {
+    id: "spotify-like-track",
+    name: "Like Track",
+    description: "Like the current track",
+    parameters: [
+      {
+        name: "trackId",
+        type: "string",
+        description: "Spotify track ID",
+        required: true,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-unlike-track",
+    name: "Unlike Track",
+    description: "Unlike a track",
+    parameters: [
+      {
+        name: "trackId",
+        type: "string",
+        description: "Spotify track ID",
+        required: true,
+      },
+    ],
+    category: "spotify",
+  },
+  {
+    id: "spotify-play-song",
+    name: "Play Song by Name",
+    description: "Search for a song by name and play it",
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "Song name or search query",
         required: true,
       },
     ],

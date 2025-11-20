@@ -26,7 +26,7 @@ export function PromptInputBox({
 }: PromptInputBoxProps) {
   const hasText = inputValue.trim().length > 0;
   const [isInputVisible, setIsInputVisible] = useState(false);
-  
+
   return (
     <div
       className={cn(
@@ -38,7 +38,7 @@ export function PromptInputBox({
         transition: "all 350ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
       } as React.CSSProperties}
     >
-      <div 
+      <div
         onClick={() => {
           // Toggle input: if visible, blur it; if hidden, focus it
           if (inputRef && 'current' in inputRef && inputRef.current) {

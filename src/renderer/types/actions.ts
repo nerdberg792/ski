@@ -5,6 +5,8 @@ export interface Action {
   scriptPath?: string; // Optional for actions that don't use scripts (e.g., Spotify API calls)
   parameters?: ActionParameter[];
   category?: string;
+  actionVerb?: string; // Custom verb for the action button (e.g., "Send", "Open", "Execute")
+  iconName?: string; // Icon identifier for the action (e.g., "message", "browser", "terminal")
 }
 
 export interface ActionParameter {

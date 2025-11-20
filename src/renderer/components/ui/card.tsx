@@ -12,7 +12,7 @@ const Card = React.forwardRef<
       className,
     )}
     style={{
-      background: "rgba(15, 23, 42, 0.4)",
+      background: "rgba(15, 23, 42, 0.95)",
       backdropFilter: "blur(26px) saturate(180%)",
       WebkitBackdropFilter: "blur(26px) saturate(180%)",
       border: "1px solid rgba(255, 255, 255, 0.1)",
@@ -24,7 +24,7 @@ const Card = React.forwardRef<
 ));
 Card.displayName = "Card";
 
-interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {}
+interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> { }
 
 const CardHeader = React.forwardRef<HTMLDivElement, CardHeaderProps>(
   ({ className, ...props }, ref) => (
@@ -76,13 +76,13 @@ const CardContent = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => {
   return (
-    <div 
-      ref={ref} 
-      className={cn("text-sm text-white/75", className)} 
+    <div
+      ref={ref}
+      className={cn("text-sm text-white/75", className)}
       style={{
         ...(props.style as React.CSSProperties),
       }}
-      {...props} 
+      {...props}
     />
   );
 });

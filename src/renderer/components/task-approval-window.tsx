@@ -3,14 +3,51 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Action, PendingAction } from "@/types/actions";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { MessageSquare, Globe, Terminal, Play, FileText, ChevronDown } from "lucide-react";
 
 interface TaskApprovalWindowProps {
   pendingAction: PendingAction;
   onApprove: () => void;
   onCancel: () => void;
   className?: string;
-  position?: "below-prompt" | "standalone";
+  position?: "below-prompt" | "standalone" | "inline";
 }
+
+// Helper function to get icon component based on action
+const getActionIcon = (action: Action) => {
+  const iconName = action.iconName?.toLowerCase() || "";
+  const actionName = action.name.toLowerCase();
+
+  if (iconName.includes("message") || actionName.includes("message") || actionName.includes("send")) {
+    return MessageSquare;
+  } else if (iconName.includes("browser") || iconName.includes("web") || actionName.includes("open") || actionName.includes("browse")) {
+    return Globe;
+  } else if (iconName.includes("terminal") || iconName.includes("command") || actionName.includes("execute")) {
+    return Terminal;
+  } else if (iconName.includes("file") || iconName.includes("document")) {
+    return FileText;
+  } else {
+    return Play; // Default icon
+  }
+};
+
+// Helper function to get action verb
+const getActionVerb = (action: Action): string => {
+  if (action.actionVerb) {
+    return action.actionVerb;
+  }
+
+  // Infer from action name
+  const name = action.name.toLowerCase();
+  if (name.includes("send")) return "Send";
+  if (name.includes("open")) return "Open";
+  if (name.includes("execute") || name.includes("run")) return "Execute";
+  if (name.includes("create")) return "Create";
+  if (name.includes("delete")) return "Delete";
+  if (name.includes("update")) return "Update";
+
+  return "Proceed"; // Default
+};
 
 export function TaskApprovalWindow({
   pendingAction,
@@ -20,7 +57,78 @@ export function TaskApprovalWindow({
   position = "below-prompt",
 }: TaskApprovalWindowProps) {
   const { action, parameters } = pendingAction;
+  const ActionIcon = getActionIcon(action);
+  const actionVerb = getActionVerb(action);
 
+  // Inline mode: blend into parent card without borders/background
+  if (position === "inline") {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -5 }}
+        transition={{
+          type: "spring",
+          stiffness: 400,
+          damping: 25,
+        }}
+        className={cn("w-full", className)}
+      >
+        {/* Inline content - no card wrapper */}
+        <div className="flex flex-col gap-3 pt-4 border-t border-white/10">
+          {/* Tab-like header with icon and action name */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-lg">
+              <ActionIcon className="w-4 h-4 text-white" />
+              <span className="text-sm font-medium text-white">{action.name}</span>
+            </div>
+            <ChevronDown className="w-4 h-4 text-white/40" />
+          </div>
+
+          {/* Description */}
+          <p className="text-sm text-white/70 leading-relaxed">
+            {action.description}
+          </p>
+
+          {/* Parameters if any */}
+          {parameters && Object.keys(parameters).length > 0 && (
+            <div className="space-y-1">
+              {Object.entries(parameters).map(([key, value]) => (
+                <p
+                  key={key}
+                  className="text-sm text-white/70 leading-relaxed"
+                >
+                  <span className="font-medium text-white/90">{key}:</span> {String(value)}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Action buttons - combined, half width, right-aligned */}
+          <div className="flex justify-end pt-2">
+            <div className="flex items-center gap-2 w-1/2">
+              <Button
+                onClick={onCancel}
+                className="flex-1 bg-white/20 hover:bg-white/30 text-white/90 hover:text-white rounded-lg border-none shadow-none font-medium h-9"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="default"
+                size="default"
+                onClick={onApprove}
+                className="flex-1 bg-[#007AFF] hover:bg-[#0062CC] text-white rounded-lg font-medium border-none shadow-none h-9"
+              >
+                {actionVerb}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Standalone/below-prompt mode: render as separate card
   return (
     <motion.div
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -38,106 +146,63 @@ export function TaskApprovalWindow({
       )}
     >
       <Card
-        className="w-full rounded-xl overflow-hidden p-0 flex flex-col"
-        style={{
-          background: "transparent",
-          backdropFilter: "none",
-          WebkitBackdropFilter: "none",
-          border: "none",
-          boxShadow:
-            "0 0 50px rgba(0, 0, 0, 0.10), 0 0 100px rgba(0, 0, 0, 0.06), 0 0 150px rgba(0, 0, 0, 0.04), 0 8px 32px rgba(0, 0, 0, 0.08)",
-          filter: "drop-shadow(0 0 2px rgba(255, 255, 255, 0.5))",
-        }}
+        className="w-full rounded-xl overflow-hidden p-0 flex flex-col bg-white/95 backdrop-blur-md border border-glass-border shadow-glass-lg"
       >
-        {/* Header */}
-        <div
-          className="px-5 pt-4 pb-3 relative flex-shrink-0"
-          style={{
-            background:
-              "linear-gradient(to bottom, rgba(255, 255, 255, 0.98) 0%, rgba(250, 250, 250, 0.95) 50%, rgba(248, 248, 248, 0.92) 100%)",
-            backdropFilter: "blur(60px) saturate(120%)",
-            WebkitBackdropFilter: "blur(60px) saturate(120%)",
-            boxShadow:
-              "inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.03)",
-          }}
-        >
-          <CardTitle
-            className="text-slate-900 text-base font-semibold leading-tight mb-2"
-            style={{ color: "rgb(15, 23, 42)" }}
-          >
-            Action Required
-          </CardTitle>
-          <p
-            className="text-sm text-slate-600"
-            style={{ color: "rgb(71, 85, 105)" }}
-          >
-            {action.description}
-          </p>
-        </div>
-
         {/* Content */}
         <CardContent
-          className="px-5 py-4 flex-shrink-0"
-          style={{
-            background:
-              "linear-gradient(to bottom, rgba(252, 252, 252, 0.95) 0%, rgba(248, 248, 248, 0.88) 40%, rgba(245, 245, 245, 0.80) 100%)",
-            backdropFilter: "blur(60px) saturate(120%)",
-            WebkitBackdropFilter: "blur(60px) saturate(120%)",
-            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.4)",
-          }}
+          className="px-6 py-5 flex-shrink-0"
         >
           <div className="flex flex-col gap-3">
-            <div>
-              <p
-                className="font-semibold text-base leading-snug mb-1"
-                style={{ color: "rgb(15, 23, 42)" }}
-              >
-                {action.name}
-              </p>
-              {parameters && Object.keys(parameters).length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {Object.entries(parameters).map(([key, value]) => (
-                    <p
-                      key={key}
-                      className="text-sm text-slate-600"
-                      style={{ color: "rgb(71, 85, 105)" }}
-                    >
-                      <span className="font-medium">{key}:</span> {String(value)}
-                    </p>
-                  ))}
-                </div>
-              )}
+            {/* Tab-like header with icon and action name */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-black/10 rounded-lg">
+                <ActionIcon className="w-4 h-4 text-black/70" />
+                <span className="text-sm font-medium text-black/80">{action.name}</span>
+              </div>
+              <ChevronDown className="w-4 h-4 text-black/40" />
             </div>
+
+            {/* Description */}
+            <p className="text-sm text-black/70 leading-relaxed">
+              {action.description}
+            </p>
+
+            {/* Parameters if any */}
+            {parameters && Object.keys(parameters).length > 0 && (
+              <div className="space-y-1">
+                {Object.entries(parameters).map(([key, value]) => (
+                  <p
+                    key={key}
+                    className="text-sm text-black/70 leading-relaxed"
+                  >
+                    <span className="font-medium text-black/90">{key}:</span> {String(value)}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         </CardContent>
 
         {/* Actions */}
         <div
-          className="px-5 py-4 flex-shrink-0 flex items-center justify-end gap-3"
-          style={{
-            background:
-              "linear-gradient(to bottom, rgba(252, 252, 252, 0.95) 0%, rgba(248, 248, 248, 0.88) 100%)",
-            backdropFilter: "blur(60px) saturate(120%)",
-            WebkitBackdropFilter: "blur(60px) saturate(120%)",
-            borderTop: "1px solid rgba(0, 0, 0, 0.05)",
-          }}
+          className="px-6 py-5 flex-shrink-0 flex justify-end border-t border-glass-border bg-white/5"
         >
-          <Button
-            variant="ghost"
-            size="default"
-            onClick={onCancel}
-            className="opacity-90 hover:opacity-100"
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="default"
-            size="default"
-            onClick={onApprove}
-            className="opacity-90 hover:opacity-100"
-          >
-            Proceed
-          </Button>
+          <div className="flex items-center gap-2 w-1/2">
+            <Button
+              onClick={onCancel}
+              className="flex-1 bg-black/10 hover:bg-black/20 text-black/70 hover:text-black/90 rounded-lg border-none shadow-none font-medium h-9"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              size="default"
+              onClick={onApprove}
+              className="flex-1 bg-[#007AFF] hover:bg-[#0062CC] text-white rounded-lg font-medium border-none shadow-none h-9"
+            >
+              {actionVerb}
+            </Button>
+          </div>
         </div>
       </Card>
     </motion.div>

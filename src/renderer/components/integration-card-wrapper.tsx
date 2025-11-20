@@ -41,9 +41,9 @@ export function IntegrationCardWrapper({
 
   const positionClasses = {
     "top-left": "top-6 left-6",
-    "top-right": "top-6 right-6",
-    "bottom-left": "bottom-6 left-6",
-    "bottom-right": "bottom-6 right-6",
+    "top-right": "top-32 right-8", // Positioned well below menu bar and away from center
+    "bottom-left": "bottom-40 left-8", // Positioned well above Dock and away from center
+    "bottom-right": "bottom-40 right-8", // Positioned well above Dock and away from center
   };
 
   return (

@@ -9,9 +9,7 @@ import type { PromptWindow } from "@/types/chat";
 import { useGemini } from "@/hooks/useGemini";
 import { applyActionDefaults, getAction } from "@/lib/actions";
 import type { PendingAction } from "@/types/actions";
-import { SpotifyControlCard } from "@/components/spotify-control-card";
 import { useSpotify } from "@/hooks/useSpotify";
-import { IntegrationCardWrapper } from "@/components/integration-card-wrapper";
 import { useAppleNotes } from "@/hooks/useAppleNotes";
 import { useAppleMaps } from "@/hooks/useAppleMaps";
 import { useAppleReminders } from "@/hooks/useAppleReminders";
@@ -26,25 +24,168 @@ function useSkyBridge() {
   return useMemo(() => window.sky, []);
 }
 
-// Wrapper component for Spotify card that only shows when user asks about Spotify
-interface SpotifyCardWrapperProps {
-  show: boolean;
+
+// Helper functions for formatting Spotify results
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
-function SpotifyCardWrapper({ show }: SpotifyCardWrapperProps) {
-  const { status, isConfigured } = useSpotify();
-  // Only show if: user asked about Spotify AND Spotify is configured
-  const shouldShow = show && isConfigured && (status.connected || !!status.account);
-  
-  return (
-    <IntegrationCardWrapper 
-      position="bottom-right" 
-      zIndex={30}
-      show={shouldShow}
-    >
-      <SpotifyControlCard />
-    </IntegrationCardWrapper>
-  );
+function formatSpotifySearchResults(results: any): string {
+  const parts: string[] = [];
+
+  if (results.tracks && results.tracks.length > 0) {
+    parts.push(`Tracks (${results.tracks.length}):`);
+    results.tracks.slice(0, 5).forEach((track: any, i: number) => {
+      parts.push(`${i + 1}. ${track.artists?.join(", ")} - ${track.name}${track.uri ? ` (${track.uri})` : ""}`);
+    });
+    if (results.tracks.length > 5) parts.push(`... and ${results.tracks.length - 5} more`);
+    parts.push("");
+  }
+
+  if (results.albums && results.albums.length > 0) {
+    parts.push(`Albums (${results.albums.length}):`);
+    results.albums.slice(0, 5).forEach((album: any, i: number) => {
+      parts.push(`${i + 1}. ${album.artists?.join(", ")} - ${album.name}${album.uri ? ` (${album.uri})` : ""}`);
+    });
+    if (results.albums.length > 5) parts.push(`... and ${results.albums.length - 5} more`);
+    parts.push("");
+  }
+
+  if (results.artists && results.artists.length > 0) {
+    parts.push(`Artists (${results.artists.length}):`);
+    results.artists.slice(0, 5).forEach((artist: any, i: number) => {
+      parts.push(`${i + 1}. ${artist.name}${artist.uri ? ` (${artist.uri})` : ""}`);
+    });
+    if (results.artists.length > 5) parts.push(`... and ${results.artists.length - 5} more`);
+    parts.push("");
+  }
+
+  if (results.playlists && results.playlists.length > 0) {
+    parts.push(`Playlists (${results.playlists.length}):`);
+    results.playlists.slice(0, 5).forEach((playlist: any, i: number) => {
+      parts.push(`${i + 1}. ${playlist.name}${playlist.uri ? ` (${playlist.uri})` : ""}`);
+    });
+    if (results.playlists.length > 5) parts.push(`... and ${results.playlists.length - 5} more`);
+    parts.push("");
+  }
+
+  return parts.join("\n") || "No results found";
+}
+
+function formatSpotifyLibrary(library: any): string {
+  const parts: string[] = [];
+
+  if (library.savedTracks && library.savedTracks.length > 0) {
+    parts.push(`Saved Tracks (${library.savedTracks.length}):`);
+    library.savedTracks.slice(0, 10).forEach((track: any, i: number) => {
+      parts.push(`${i + 1}. ${track.artists?.join(", ")} - ${track.name}`);
+    });
+    if (library.savedTracks.length > 10) parts.push(`... and ${library.savedTracks.length - 10} more`);
+    parts.push("");
+  }
+
+  if (library.playlists && library.playlists.length > 0) {
+    parts.push(`Playlists (${library.playlists.length}):`);
+    library.playlists.slice(0, 10).forEach((playlist: any, i: number) => {
+      parts.push(`${i + 1}. ${playlist.name} (${playlist.trackCount || 0} tracks)`);
+    });
+    if (library.playlists.length > 10) parts.push(`... and ${library.playlists.length - 10} more`);
+    parts.push("");
+  }
+
+  if (library.savedAlbums && library.savedAlbums.length > 0) {
+    parts.push(`Saved Albums (${library.savedAlbums.length}):`);
+    library.savedAlbums.slice(0, 10).forEach((album: any, i: number) => {
+      parts.push(`${i + 1}. ${album.artists?.join(", ")} - ${album.name}`);
+    });
+    if (library.savedAlbums.length > 10) parts.push(`... and ${library.savedAlbums.length - 10} more`);
+    parts.push("");
+  }
+
+  return parts.join("\n") || "Library is empty";
+}
+
+function formatSpotifyPlaylists(playlists: any[]): string {
+  if (playlists.length === 0) return "No playlists found";
+
+  const parts: string[] = [`Your Playlists (${playlists.length}):`];
+  playlists.slice(0, 20).forEach((playlist, i) => {
+    parts.push(`${i + 1}. ${playlist.name}${playlist.trackCount ? ` (${playlist.trackCount} tracks)` : ""}${playlist.owner ? ` by ${playlist.owner}` : ""}`);
+  });
+  if (playlists.length > 20) parts.push(`... and ${playlists.length - 20} more`);
+
+  return parts.join("\n");
+}
+
+function formatSpotifyQueue(queue: any[]): string {
+  if (queue.length === 0) return "Queue is empty";
+
+  const parts: string[] = [`Queue (${queue.length} items):`];
+  queue.slice(0, 10).forEach((item, i) => {
+    if (item.name) {
+      const artists = item.artists?.map((a: any) => a.name).join(", ") || "Unknown Artist";
+      parts.push(`${i + 1}. ${artists} - ${item.name}`);
+    }
+  });
+  if (queue.length > 10) parts.push(`... and ${queue.length - 10} more`);
+
+  return parts.join("\n");
+}
+
+function formatSpotifyDevices(devices: any[]): string {
+  if (devices.length === 0) return "No devices found";
+
+  const parts: string[] = [`Available Devices (${devices.length}):`];
+  devices.forEach((device, i) => {
+    parts.push(`${i + 1}. ${device.name} (${device.type})${device.isActive ? " [Active]" : ""}${device.volumePercent != null ? ` - Volume: ${device.volumePercent}%` : ""}`);
+  });
+
+  return parts.join("\n");
+}
+
+// Helper function to build conversation history from all windows
+function buildConversationHistory(promptWindows: PromptWindow[]): import("@/lib/gemini").ConversationHistory[] {
+  const history: import("@/lib/gemini").ConversationHistory[] = [];
+
+  // Process all windows in reverse order (oldest first) to maintain chronological order
+  const sortedWindows = [...promptWindows].reverse();
+
+  for (const window of sortedWindows) {
+    // Add the user prompt
+    if (window.prompt) {
+      history.push({
+        role: "user",
+        parts: [{ text: window.prompt }],
+      });
+    }
+
+    // Add all entries (responses, action results, etc.)
+    for (const entry of window.entries) {
+      if (entry.kind === "prompt") {
+        // Skip prompt entries as we already added the prompt above
+        continue;
+      }
+
+      if (entry.kind === "response" && entry.body) {
+        // Add response from model
+        history.push({
+          role: "model",
+          parts: [{ text: entry.body }],
+        });
+      } else if (entry.kind === "action" && entry.body) {
+        // Add action result as a model response (since it's information from the system)
+        history.push({
+          role: "model",
+          parts: [{ text: entry.body }],
+        });
+      }
+    }
+  }
+
+  return history;
 }
 
 export default function App() {
@@ -71,29 +212,9 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const accumulatedTextRef = useRef<string>("");
-  const [showSpotifyCard, setShowSpotifyCard] = useState(false);
-  const spotifyCardTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Auto-hide Spotify card after 2 minutes of inactivity
-  useEffect(() => {
-    if (showSpotifyCard) {
-      // Clear existing timeout
-      if (spotifyCardTimeoutRef.current) {
-        clearTimeout(spotifyCardTimeoutRef.current);
-      }
-      // Set new timeout to hide after 2 minutes
-      spotifyCardTimeoutRef.current = setTimeout(() => {
-        setShowSpotifyCard(false);
-      }, 2 * 60 * 1000); // 2 minutes
-    }
-    
-    return () => {
-      if (spotifyCardTimeoutRef.current) {
-        clearTimeout(spotifyCardTimeoutRef.current);
-      }
-    };
-  }, [showSpotifyCard]);
-  
+  const [holdProgress, setHoldProgress] = useState(0);
+  const [holdingCardId, setHoldingCardId] = useState<string | null>(null);
+
   const pushSystemEntry = (entry: ChatEntry) => {
     setPromptWindows((prev) => [
       {
@@ -110,14 +231,14 @@ export default function App() {
   // Helper function to add action result to a specific window
   const addActionResultWithWindowId = (targetWindowId: string | null, resultText: string, isError: boolean = false) => {
     const windowId = targetWindowId || currentWindowIdRef.current;
-    console.log("🔄 [App] addActionResultWithWindowId called:", { 
-      windowId, 
+    console.log("🔄 [App] addActionResultWithWindowId called:", {
+      windowId,
       targetWindowId,
-      resultTextLength: resultText.length, 
+      resultTextLength: resultText.length,
       isError,
-      hasWindowId: !!windowId 
+      hasWindowId: !!windowId
     });
-    
+
     if (!windowId) {
       console.error("❌ [App] No windowId in addActionResultWithWindowId, trying to find most recent window");
       // Try to use the most recent window
@@ -135,9 +256,9 @@ export default function App() {
           return prev.map((w) =>
             w.id === mostRecentWindow.id
               ? {
-                  ...w,
-                  entries: [...w.entries, resultEntry],
-                }
+                ...w,
+                entries: [...w.entries, resultEntry],
+              }
               : w
           );
         }
@@ -161,9 +282,9 @@ export default function App() {
       const updated = prev.map((w) =>
         w.id === windowId
           ? {
-              ...w,
-              entries: [...w.entries, resultEntry],
-            }
+            ...w,
+            entries: [...w.entries, resultEntry],
+          }
           : w
       );
       console.log("🔄 [App] Updated prompt windows, checking if window exists:", updated.some(w => w.id === windowId));
@@ -219,29 +340,38 @@ export default function App() {
       sourceLabel: "Sky",
     };
 
-    // Add empty response entry
-    setPromptWindows((prev) =>
-      prev.map((w) =>
+    // Get current state to build history before updating
+    let currentWindows: PromptWindow[] = [];
+    setPromptWindows((prev) => {
+      currentWindows = prev;
+      return prev.map((w) =>
         w.id === windowId
           ? {
-              ...w,
-              entries: [...w.entries, responseEntry],
-            }
+            ...w,
+            entries: [...w.entries, responseEntry],
+          }
           : w
-      )
-    );
+      );
+    });
+
+    // Build conversation history from all existing windows (including the one we just updated)
+    const conversationHistory = buildConversationHistory(currentWindows);
+    console.log("📚 [App] Building conversation history for action follow-up:", {
+      windowCount: currentWindows.length,
+      historyLength: conversationHistory.length,
+    });
 
     try {
       console.log("🔄 [App] Calling gemini.streamResponse");
       await gemini.streamResponse(followUpPrompt, {
         onChunk: (chunk: import("@/lib/gemini").GeminiStreamChunk) => {
-          console.log("🔄 [App] Gemini chunk received:", { 
-            hasText: !!chunk.text, 
+          console.log("🔄 [App] Gemini chunk received:", {
+            hasText: !!chunk.text,
             textLength: chunk.text?.length || 0,
             hasProposedAction: !!chunk.proposedAction,
-            isComplete: chunk.isComplete 
+            isComplete: chunk.isComplete
           });
-          
+
           if (chunk.proposedAction) {
             // Action proposed - ignore for follow-up responses
             console.log("🔄 [App] Ignoring proposed action in follow-up");
@@ -258,13 +388,13 @@ export default function App() {
                 w.id !== windowId
                   ? w
                   : {
-                      ...w,
-                      entries: w.entries.map((e) =>
-                        e.id === responseEntry.id
-                          ? { ...e, body: accumulatedTextRef.current }
-                          : e
-                      ),
-                    },
+                    ...w,
+                    entries: w.entries.map((e) =>
+                      e.id === responseEntry.id
+                        ? { ...e, body: accumulatedTextRef.current }
+                        : e
+                    ),
+                  },
               ),
             );
           }
@@ -290,23 +420,23 @@ export default function App() {
             prev.map((w) =>
               w.id === windowId
                 ? {
-                    ...w,
-                    entries: [
-                      ...w.entries,
-                      {
-                        id: `${windowId}-error-${Date.now()}`,
-                        kind: "response",
-                        heading: "",
-                        body: `Error getting response: ${error.message}`,
-                        sourceLabel: "Error",
-                      },
-                    ],
-                  }
+                  ...w,
+                  entries: [
+                    ...w.entries,
+                    {
+                      id: `${windowId}-error-${Date.now()}`,
+                      kind: "response",
+                      heading: "",
+                      body: `Error getting response: ${error.message}`,
+                      sourceLabel: "Error",
+                    },
+                  ],
+                }
                 : w
             ),
           );
         },
-      });
+      }, conversationHistory);
       console.log("🔄 [App] gemini.streamResponse completed");
     } catch (error) {
       console.error("❌ [App] Error sending action result to Gemini:", error);
@@ -320,17 +450,7 @@ export default function App() {
       if (!action) {
         return;
       }
-      // Show Spotify card only if a Spotify action is proposed
-      if (action.category === "spotify") {
-        setShowSpotifyCard(true);
-      } else {
-        // Hide card for non-Spotify actions
-        setShowSpotifyCard(false);
-        if (spotifyCardTimeoutRef.current) {
-          clearTimeout(spotifyCardTimeoutRef.current);
-          spotifyCardTimeoutRef.current = null;
-        }
-      }
+      // Spotify actions are now handled inline in the prompt window
       const latestWindowId = currentWindowIdRef.current;
       const normalizedParameters = applyActionDefaults(action, parameters);
       if (latestWindowId) {
@@ -441,7 +561,7 @@ export default function App() {
 
   const submitPrompt = async () => {
     if (!inputValue.trim()) return;
-    
+
     // Check if Gemini is initialized, if not try to initialize it
     if (!gemini.initialized) {
       try {
@@ -466,7 +586,7 @@ export default function App() {
     }
 
     const prompt = inputValue.trim();
-    
+
     // Check if the prompt explicitly mentions Spotify or music control
     // Use more specific patterns to avoid false positives
     const promptLower = prompt.toLowerCase();
@@ -480,23 +600,9 @@ export default function App() {
       /(search|find) (song|music|track|album|artist|playlist) (on|in) spotify/i,
       /spotify (play|pause|next|previous|volume|shuffle|search)/i,
     ];
-    
-    const isSpotifyRelated = spotifyPatterns.some(pattern => pattern.test(prompt));
-    
-    // Only show card if explicitly asking about Spotify
-    // Hide it for all other queries
-    if (isSpotifyRelated) {
-      setShowSpotifyCard(true);
-    } else {
-      // Immediately hide card for non-Spotify queries
-      setShowSpotifyCard(false);
-      // Clear any pending timeout
-      if (spotifyCardTimeoutRef.current) {
-        clearTimeout(spotifyCardTimeoutRef.current);
-        spotifyCardTimeoutRef.current = null;
-      }
-    }
-    
+
+    // Spotify controls are now shown inline in the prompt window
+
     const promptEntry: ChatEntry = {
       id: `prompt-${Date.now()}`,
       kind: "prompt",
@@ -545,6 +651,14 @@ export default function App() {
       ...prev,
     ]);
 
+    // Build conversation history from all existing windows
+    const conversationHistory = buildConversationHistory(promptWindows);
+    console.log("📚 [App] Building conversation history:", {
+      windowCount: promptWindows.length,
+      historyLength: conversationHistory.length,
+      historyPreview: conversationHistory.slice(-3).map(h => ({ role: h.role, textLength: h.parts[0]?.text?.length || 0 })),
+    });
+
     // Stream Gemini response
     try {
       await gemini.streamResponse(prompt, {
@@ -553,27 +667,27 @@ export default function App() {
             // Action proposed - will be handled by onActionProposed callback
             return;
           }
-          
+
           if (chunk.text) {
             accumulatedTextRef.current += chunk.text;
-            
+
             // Update window
             setPromptWindows((prev) =>
               prev.map((w) =>
                 w.id !== windowId
                   ? w
                   : {
-                      ...w,
-                      entries: w.entries.map((e) =>
-                        e.id === `${windowId}-resp`
-                          ? { ...e, body: accumulatedTextRef.current }
-                          : e
-                      ),
-                    },
+                    ...w,
+                    entries: w.entries.map((e) =>
+                      e.id === `${windowId}-resp`
+                        ? { ...e, body: accumulatedTextRef.current }
+                        : e
+                    ),
+                  },
               ),
             );
           }
-          
+
           if (chunk.isComplete) {
             setIsProcessing(false);
             setPromptWindows((prev) =>
@@ -595,7 +709,7 @@ export default function App() {
           setIsProcessing(false);
           setCurrentWindowId(null);
           currentWindowIdRef.current = null; // Clear ref
-          
+
           // Add error entry
           const errorEntry: ChatEntry = {
             id: `${windowId}-error`,
@@ -604,20 +718,20 @@ export default function App() {
             body: `Failed to get response: ${error.message}`,
             sourceLabel: "Sky",
           };
-          
+
           setPromptWindows((prev) =>
             prev.map((w) =>
               w.id === windowId
                 ? {
-                    ...w,
-                    status: "done",
-                    entries: [...w.entries, errorEntry],
-                  }
+                  ...w,
+                  status: "done",
+                  entries: [...w.entries, errorEntry],
+                }
                 : w,
             ),
           );
         },
-      });
+      }, conversationHistory);
     } catch (error) {
       console.error("Error streaming response:", error);
       setIsProcessing(false);
@@ -651,57 +765,286 @@ export default function App() {
       const params = applyActionDefaults(action, parameters);
       let result: { success: boolean; error?: string } = { success: true };
 
-      // Handle Spotify actions differently - they call the Spotify API
+      // Handle Spotify actions
       if (action.category === "spotify") {
-        // Show Spotify card when executing Spotify actions
-        setShowSpotifyCard(true);
+        // Spotify controls are now shown inline in the prompt window
 
-        switch (action.id) {
-          case "spotify-play":
-            await sky?.spotify?.sendCommand?.({ type: "play" });
-            break;
-          case "spotify-pause":
-            await sky?.spotify?.sendCommand?.({ type: "pause" });
-            break;
-          case "spotify-toggle-play":
-            await sky?.spotify?.sendCommand?.({ type: "toggle-play" });
-            break;
-          case "spotify-next":
-            await sky?.spotify?.sendCommand?.({ type: "next" });
-            break;
-          case "spotify-previous":
-            await sky?.spotify?.sendCommand?.({ type: "previous" });
-            break;
-          case "spotify-set-volume":
-            if (typeof params.level === "number") {
-              await sky?.spotify?.sendCommand?.({ type: "set-volume", value: params.level });
-            } else {
-              result = { success: false, error: "Volume level must be a number" };
+        try {
+          switch (action.id) {
+            // Basic Playback Controls
+            case "spotify-play":
+              await sky?.spotify?.play?.();
+              addActionResultWithWindowId(windowId, "Playing Spotify", false);
+              break;
+            case "spotify-pause":
+              await sky?.spotify?.pause?.();
+              addActionResultWithWindowId(windowId, "Paused Spotify", false);
+              break;
+            case "spotify-toggle-play":
+              await sky?.spotify?.togglePlayPause?.();
+              addActionResultWithWindowId(windowId, "Toggled play/pause", false);
+              break;
+            case "spotify-next":
+              await sky?.spotify?.nextTrack?.();
+              addActionResultWithWindowId(windowId, "Skipped to next track", false);
+              break;
+            case "spotify-previous":
+              await sky?.spotify?.previousTrack?.();
+              addActionResultWithWindowId(windowId, "Went to previous track", false);
+              break;
+            case "spotify-current-track": {
+              const trackResult = await sky?.spotify?.getCurrentTrack?.();
+              if (trackResult?.success && trackResult?.output) {
+                const parts = trackResult.output.split("|");
+                if (parts.length >= 10) {
+                  const trackInfo = `Now Playing:\n${parts[1]} - ${parts[0]}\nAlbum: ${parts[2]}\nURL: ${parts[3]}\nState: ${parts[4]}\nVolume: ${parts[7]}%\nShuffle: ${parts[8]}\nRepeat: ${parts[9]}`;
+                  await sendActionResultToGemini(action.name, trackInfo, windowId);
+                } else {
+                  addActionResultWithWindowId(windowId, trackResult.output || "No track information available", false);
+                }
+              } else {
+                addActionResultWithWindowId(windowId, trackResult?.error || "Failed to get current track", true);
+              }
+              break;
             }
-            break;
-          case "spotify-search":
-            // Spotify search requires UI integration to display results
-            // The search can be performed via the Spotify API, but results need to be displayed in the UI
-            console.log("Spotify search requested:", params.query, params.category);
-            result = { success: false, error: "Spotify search requires UI integration. Use the Spotify control card." };
-            break;
-          case "spotify-play-track":
-            if (typeof params.uri === "string") {
-              // Determine if it's a track or context (album/playlist)
-              const uriType = params.uri.split(":")[1];
-              await sky?.spotify?.playUri?.({
-                type: uriType === "track" ? "track" : "context",
-                uri: params.uri,
-              });
-            } else {
-              result = { success: false, error: "URI must be a string" };
+            // Volume Controls
+            case "spotify-set-volume":
+              if (typeof params.level === "number") {
+                await sky?.spotify?.setVolume?.({ level: params.level });
+                addActionResultWithWindowId(windowId, `Volume set to ${params.level}%`, false);
+              } else {
+                result = { success: false, error: "Volume level must be a number" };
+              }
+              break;
+            case "spotify-increase-volume": {
+              const step = typeof params.step === "number" ? params.step : 10;
+              await sky?.spotify?.increaseVolume?.({ step });
+              addActionResultWithWindowId(windowId, `Volume increased by ${step}%`, false);
+              break;
             }
-            break;
-          default:
-            result = { success: false, error: `Unknown Spotify action: ${action.id}` };
+            case "spotify-decrease-volume": {
+              const step = typeof params.step === "number" ? params.step : 10;
+              await sky?.spotify?.decreaseVolume?.({ step });
+              addActionResultWithWindowId(windowId, `Volume decreased by ${step}%`, false);
+              break;
+            }
+            case "spotify-volume-0":
+              await sky?.spotify?.muteVolume?.();
+              addActionResultWithWindowId(windowId, "Volume muted", false);
+              break;
+            case "spotify-volume-25":
+              await sky?.spotify?.setVolumePercent?.({ percent: 25 });
+              addActionResultWithWindowId(windowId, "Volume set to 25%", false);
+              break;
+            case "spotify-volume-50":
+              await sky?.spotify?.setVolumePercent?.({ percent: 50 });
+              addActionResultWithWindowId(windowId, "Volume set to 50%", false);
+              break;
+            case "spotify-volume-75":
+              await sky?.spotify?.setVolumePercent?.({ percent: 75 });
+              addActionResultWithWindowId(windowId, "Volume set to 75%", false);
+              break;
+            case "spotify-volume-100":
+              await sky?.spotify?.setVolumePercent?.({ percent: 100 });
+              addActionResultWithWindowId(windowId, "Volume set to 100%", false);
+              break;
+            // Playback Controls
+            case "spotify-toggle-shuffle": {
+              const shuffleResult = await sky?.spotify?.toggleShuffle?.();
+              const shuffleState = shuffleResult?.output === "true" ? "on" : "off";
+              addActionResultWithWindowId(windowId, `Shuffle ${shuffleState}`, false);
+              break;
+            }
+            case "spotify-toggle-repeat": {
+              const repeatResult = await sky?.spotify?.toggleRepeat?.();
+              const repeatState = repeatResult?.output === "true" ? "on" : "off";
+              addActionResultWithWindowId(windowId, `Repeat ${repeatState}`, false);
+              break;
+            }
+            case "spotify-forward-seconds":
+              if (typeof params.seconds === "number") {
+                await sky?.spotify?.forwardSeconds?.({ seconds: params.seconds });
+                addActionResultWithWindowId(windowId, `Skipped forward ${params.seconds} seconds`, false);
+              } else {
+                result = { success: false, error: "Seconds must be a number" };
+              }
+              break;
+            case "spotify-backward-seconds":
+              if (typeof params.seconds === "number") {
+                await sky?.spotify?.backwardSeconds?.({ seconds: params.seconds });
+                addActionResultWithWindowId(windowId, `Skipped backward ${params.seconds} seconds`, false);
+              } else {
+                result = { success: false, error: "Seconds must be a number" };
+              }
+              break;
+            case "spotify-skip-15":
+              await sky?.spotify?.forwardSeconds?.({ seconds: 15 });
+              addActionResultWithWindowId(windowId, "Skipped forward 15 seconds", false);
+              break;
+            case "spotify-back-15":
+              await sky?.spotify?.backwardSeconds?.({ seconds: 15 });
+              addActionResultWithWindowId(windowId, "Skipped backward 15 seconds", false);
+              break;
+            case "spotify-backward-to-beginning":
+              await sky?.spotify?.backwardToBeginning?.();
+              addActionResultWithWindowId(windowId, "Went to beginning of track", false);
+              break;
+            // Utility Actions
+            case "spotify-copy-url": {
+              const urlResult = await sky?.spotify?.copyTrackUrl?.();
+              if (urlResult?.success && urlResult?.output) {
+                addActionResultWithWindowId(windowId, `Copied track URL to clipboard: ${urlResult.output}`, false);
+              } else {
+                addActionResultWithWindowId(windowId, urlResult?.error || "Failed to copy URL", true);
+              }
+              break;
+            }
+            case "spotify-copy-artist-title": {
+              const copyResult = await sky?.spotify?.copyArtistAndTitle?.();
+              if (copyResult?.success && copyResult?.output) {
+                addActionResultWithWindowId(windowId, `Copied to clipboard: ${copyResult.output}`, false);
+              } else {
+                addActionResultWithWindowId(windowId, copyResult?.error || "Failed to copy", true);
+              }
+              break;
+            }
+            // Web API Actions
+            case "spotify-search": {
+              if (typeof params.query === "string") {
+                const categories = params.category ? [params.category as any] : undefined;
+                const searchResults = await sky?.spotify?.search?.({ query: params.query, categories });
+                if (searchResults) {
+                  const resultText = formatSpotifySearchResults(searchResults);
+                  await sendActionResultToGemini(action.name, resultText, windowId);
+                } else {
+                  addActionResultWithWindowId(windowId, "No search results found", false);
+                }
+              } else {
+                result = { success: false, error: "Query must be a string" };
+              }
+              break;
+            }
+            case "spotify-play-track":
+              if (typeof params.uri === "string") {
+                const uriType = params.uri.split(":")[1];
+                await sky?.spotify?.playUri?.({
+                  type: uriType === "track" ? "track" : "context",
+                  uri: params.uri,
+                });
+                addActionResultWithWindowId(windowId, `Playing ${params.uri}`, false);
+              } else {
+                result = { success: false, error: "URI must be a string" };
+              }
+              break;
+            case "spotify-queue-track":
+              if (typeof params.uri === "string") {
+                await sky?.spotify?.queueUri?.(params.uri);
+                addActionResultWithWindowId(windowId, `Added ${params.uri} to queue`, false);
+              } else {
+                result = { success: false, error: "URI must be a string" };
+              }
+              break;
+            case "spotify-get-library": {
+              const library = await sky?.spotify?.getLibrary?.();
+              if (library) {
+                const resultText = formatSpotifyLibrary(library);
+                await sendActionResultToGemini(action.name, resultText, windowId);
+              } else {
+                addActionResultWithWindowId(windowId, "Failed to get library", true);
+              }
+              break;
+            }
+            case "spotify-get-playlists": {
+              const limit = typeof params.limit === "number" ? params.limit : 50;
+              const playlists = await sky?.spotify?.getMyPlaylists?.({ limit });
+              if (playlists && Array.isArray(playlists)) {
+                const resultText = formatSpotifyPlaylists(playlists);
+                await sendActionResultToGemini(action.name, resultText, windowId);
+              } else {
+                addActionResultWithWindowId(windowId, "Failed to get playlists", true);
+              }
+              break;
+            }
+            case "spotify-get-queue": {
+              const queue = await sky?.spotify?.getQueue?.();
+              if (queue && Array.isArray(queue)) {
+                const resultText = formatSpotifyQueue(queue);
+                await sendActionResultToGemini(action.name, resultText, windowId);
+              } else {
+                addActionResultWithWindowId(windowId, "No items in queue", false);
+              }
+              break;
+            }
+            case "spotify-get-devices": {
+              const devices = await sky?.spotify?.getDevices?.();
+              if (devices && Array.isArray(devices)) {
+                const resultText = formatSpotifyDevices(devices);
+                await sendActionResultToGemini(action.name, resultText, windowId);
+              } else {
+                addActionResultWithWindowId(windowId, "No devices found", false);
+              }
+              break;
+            }
+            case "spotify-get-currently-playing": {
+              const track = await sky?.spotify?.getCurrentlyPlaying?.();
+              if (track) {
+                const resultText = `Currently Playing:\n${track.artists?.join(", ")} - ${track.name}\nAlbum: ${track.album}\nDuration: ${formatDuration(track.durationMs || 0)}`;
+                await sendActionResultToGemini(action.name, resultText, windowId);
+              } else {
+                addActionResultWithWindowId(windowId, "No track currently playing", false);
+              }
+              break;
+            }
+            case "spotify-like-track":
+              if (typeof params.trackId === "string") {
+                await sky?.spotify?.setTrackSaved?.({ trackId: params.trackId, saved: true });
+                addActionResultWithWindowId(windowId, `Liked track ${params.trackId}`, false);
+              } else {
+                result = { success: false, error: "Track ID must be a string" };
+              }
+              break;
+            case "spotify-unlike-track":
+              if (typeof params.trackId === "string") {
+                await sky?.spotify?.setTrackSaved?.({ trackId: params.trackId, saved: false });
+                addActionResultWithWindowId(windowId, `Unliked track ${params.trackId}`, false);
+              } else {
+                result = { success: false, error: "Track ID must be a string" };
+              }
+              break;
+            case "spotify-play-song": {
+              // Search and play the first track result
+              if (typeof params.query === "string") {
+                const searchResults = await sky?.spotify?.search?.({ query: params.query, categories: ["tracks"] });
+                if (searchResults && searchResults.tracks && searchResults.tracks.length > 0) {
+                  const firstTrack = searchResults.tracks[0];
+                  if (firstTrack.uri) {
+                    await sky?.spotify?.playUri?.({
+                      type: "track",
+                      uri: firstTrack.uri,
+                    });
+                    const trackInfo = `${firstTrack.artists?.join(", ")} - ${firstTrack.name}`;
+                    addActionResultWithWindowId(windowId, `Playing: ${trackInfo}`, false);
+                  } else {
+                    addActionResultWithWindowId(windowId, "Found track but no URI available", true);
+                  }
+                } else {
+                  addActionResultWithWindowId(windowId, `No tracks found for "${params.query}"`, false);
+                }
+              } else {
+                result = { success: false, error: "Query must be a string" };
+              }
+              break;
+            }
+            default:
+              result = { success: false, error: `Unknown Spotify action: ${action.id}` };
+          }
+        } catch (error) {
+          console.error("❌ [App] Spotify action error:", error);
+          result = { success: false, error: error instanceof Error ? error.message : String(error) };
+          addActionResultWithWindowId(windowId, `Error: ${result.error}`, true);
         }
 
-        if (!result.success) {
+        if (!result.success && result.error) {
           console.error("❌ [App] Spotify action failed:", {
             error: result.error,
             actionId: pendingAction.action.id,
@@ -874,7 +1217,7 @@ export default function App() {
       } else if (action.category === "apple-reminders") {
         // Handle Apple Reminders actions
         console.log("📋 [App] Handling Apple Reminders action:", action.id, params);
-        
+
         if (!appleReminders.isAvailable) {
           console.error("❌ [App] Apple Reminders integration is not available");
           result = { success: false, error: "Apple Reminders integration is not available" };
@@ -891,11 +1234,11 @@ export default function App() {
                   notes: typeof params.notes === "string" ? params.notes : undefined,
                 };
                 console.log("📝 [App] Calling appleReminders.create with payload:", createPayload);
-                
+
                 const createResult = await appleReminders.create(createPayload);
-                
+
                 console.log("📝 [App] Create result:", createResult);
-                
+
                 if (!createResult.success) {
                   result = { success: false, error: createResult.error };
                   console.error("❌ [App] Failed to create reminder:", createResult.error);
@@ -995,7 +1338,7 @@ export default function App() {
       } else if (action.category === "finder") {
         // Handle Finder actions
         console.log("📁 [App] Handling Finder action:", action.id, params);
-        
+
         if (!finder.isAvailable) {
           console.error("❌ [App] Finder integration is not available");
           result = { success: false, error: "Finder integration is not available" };
@@ -1043,7 +1386,7 @@ export default function App() {
             case "finder-move-to-folder":
               if (typeof params.destination === "string") {
                 let filePaths: string[] = [];
-                
+
                 // Get file paths from parameter or selected files
                 if (typeof params.filePaths === "string") {
                   filePaths = params.filePaths.split(",").map(p => p.trim()).filter(p => p.length > 0);
@@ -1083,7 +1426,7 @@ export default function App() {
             case "finder-copy-to-folder":
               if (typeof params.destination === "string") {
                 let filePaths: string[] = [];
-                
+
                 // Get file paths from parameter or selected files
                 if (typeof params.filePaths === "string") {
                   filePaths = params.filePaths.split(",").map(p => p.trim()).filter(p => p.length > 0);
@@ -1134,7 +1477,7 @@ export default function App() {
       } else if (action.category === "browser-bookmarks") {
         // Handle Browser Bookmarks actions
         console.log("🔖 [App] Handling Browser Bookmarks action:", action.id, params);
-        
+
         if (!browserBookmarks.isAvailable) {
           console.error("❌ [App] Browser Bookmarks integration is not available");
           result = { success: false, error: "Browser Bookmarks integration is not available" };
@@ -1153,7 +1496,7 @@ export default function App() {
                 } else {
                   const bookmarkCount = searchResult.bookmarks?.length || 0;
                   console.log(`✅ [App] Found ${bookmarkCount} bookmarks`);
-                  
+
                   if (bookmarkCount > 0) {
                     const bookmarkList = searchResult.bookmarks!
                       .slice(0, 10)
@@ -1207,7 +1550,7 @@ export default function App() {
       } else if (action.category === "browser-history") {
         // Handle Browser History actions
         console.log("📜 [App] Handling Browser History action:", action.id, params);
-        
+
         if (!browserHistory.isAvailable) {
           console.error("❌ [App] Browser History integration is not available");
           result = { success: false, error: "Browser History integration is not available" };
@@ -1227,7 +1570,7 @@ export default function App() {
                 } else {
                   const entryCount = searchResult.entries?.length || 0;
                   console.log(`✅ [App] Found ${entryCount} history entries`);
-                  
+
                   if (entryCount > 0) {
                     const historyList = searchResult.entries!
                       .slice(0, 10)
@@ -1260,7 +1603,7 @@ export default function App() {
       } else if (action.category === "browser-tabs") {
         // Handle Browser Tabs actions
         console.log("📑 [App] Handling Browser Tabs action:", action.id, params);
-        
+
         if (!browserTabs.isAvailable) {
           console.error("❌ [App] Browser Tabs integration is not available");
           result = { success: false, error: "Browser Tabs integration is not available" };
@@ -1279,7 +1622,7 @@ export default function App() {
                 } else {
                   const tabCount = searchResult.tabs?.length || 0;
                   console.log(`✅ [App] Found ${tabCount} tabs`);
-                  
+
                   if (tabCount > 0) {
                     const tabList = searchResult.tabs!
                       .map((t, i) => `${i + 1}. ${t.title}\n   ${t.url} (${t.browser}, Window ${t.windowId}, Tab ${t.tabIndex})`)
@@ -1336,7 +1679,7 @@ export default function App() {
       } else if (action.category === "browser-profiles") {
         // Handle Browser Profiles actions
         console.log("👤 [App] Handling Browser Profiles action:", action.id, params);
-        
+
         if (!browserProfiles.isAvailable) {
           console.error("❌ [App] Browser Profiles integration is not available");
           result = { success: false, error: "Browser Profiles integration is not available" };
@@ -1352,7 +1695,7 @@ export default function App() {
                 } else {
                   const profileCount = listResult.profiles?.length || 0;
                   console.log(`✅ [App] Found ${profileCount} profiles`);
-                  
+
                   if (profileCount > 0) {
                     const profileList = listResult.profiles!
                       .map((p, i) => `${i + 1}. ${p.name} (${p.browser})`)
@@ -1416,12 +1759,12 @@ export default function App() {
           action.scriptPath,
         );
 
-        console.log("🔄 [App] Script action result:", { 
-          success: result?.success, 
-          hasOutput: !!result?.output, 
+        console.log("🔄 [App] Script action result:", {
+          success: result?.success,
+          hasOutput: !!result?.output,
           outputLength: result?.output?.length,
           actionId: action.id,
-          windowId 
+          windowId
         });
 
         if (!result?.success) {
@@ -1446,7 +1789,7 @@ export default function App() {
                 }));
                 const resultText = JSON.stringify(tabsData, null, 2);
                 const promptForGemini = `The user asked to list Chrome tabs. Here are ${tabs.length} open tabs in JSON format. Please format this as a clean, readable list with clickable markdown links showing only the titles. Use markdown link format: [Title](URL). Format it nicely with each tab on a new line. Here's the data:\n\n${resultText}`;
-                
+
                 console.log("🔄 [App] Sending Chrome tabs to Gemini for formatting");
                 await sendActionResultToGemini("List Chrome Tabs", promptForGemini, windowId, false);
                 console.log("✅ [App] Sent Chrome tabs to Gemini for formatting");
@@ -1514,14 +1857,14 @@ export default function App() {
           "relative flex h-full w-full transition-opacity duration-300 ease-in-out overflow-hidden",
           isVisible ? "opacity-100" : "opacity-0",
         )}
-        style={{ 
-          WebkitAppRegion: "drag", 
+        style={{
+          WebkitAppRegion: "drag",
           background: "transparent",
           borderRadius: 0,
         } as React.CSSProperties}
       >
         <div className="relative flex h-full w-full items-center gap-1 pl-2 pr-2 py-1 z-10 overflow-hidden" style={{ WebkitAppRegion: "drag" } as React.CSSProperties}>
-          <div 
+          <div
             onClick={() => {
               // Toggle input: if visible, blur it; if hidden, focus it
               if (isInputVisible) {
@@ -1551,9 +1894,9 @@ export default function App() {
   }
 
   return (
-    <div 
-      className="relative flex h-full w-full flex-col text-white overflow-hidden" 
-      style={{ 
+    <div
+      className="relative flex h-full w-full flex-col text-white overflow-hidden"
+      style={{
         background: "transparent",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
@@ -1561,8 +1904,6 @@ export default function App() {
       }}
     >
       <ExpandedBackground />
-      {/* Integration cards (Spotify, etc.) positioned in corners to avoid overlap with centered prompt windows */}
-      <SpotifyCardWrapper show={showSpotifyCard} />
       {/* Floating prompt windows stack - always render on top when expanded */}
       <PromptWindowsStack
         windows={promptWindows}
@@ -1595,6 +1936,10 @@ export default function App() {
         pendingAction={pendingAction}
         onActionApprove={handleActionApprove}
         onActionCancel={handleActionCancel}
+        onHoldProgressChange={(progress, cardId) => {
+          setHoldProgress(progress);
+          setHoldingCardId(cardId);
+        }}
       />
       {/* Underlying expanded content removed per new flow to keep focus on stacked windows */}
     </div>

@@ -157,6 +157,73 @@ const api = {
       ipcRenderer.on("spotify:error", listener);
       return () => ipcRenderer.removeListener("spotify:error", listener);
     },
+    // New comprehensive Spotify methods
+    getCurrentTrack(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:getCurrentTrack");
+    },
+    togglePlayPause(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:togglePlayPause");
+    },
+    play(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:play");
+    },
+    pause(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:pause");
+    },
+    nextTrack(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:nextTrack");
+    },
+    previousTrack(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:previousTrack");
+    },
+    setVolume(payload: { level: number }): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:setVolume", payload);
+    },
+    increaseVolume(payload: { step?: number }): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:increaseVolume", payload);
+    },
+    decreaseVolume(payload: { step?: number }): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:decreaseVolume", payload);
+    },
+    muteVolume(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:muteVolume");
+    },
+    setVolumePercent(payload: { percent: number }): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:setVolumePercent", payload);
+    },
+    toggleShuffle(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:toggleShuffle");
+    },
+    toggleRepeat(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:toggleRepeat");
+    },
+    forwardSeconds(payload: { seconds: number }): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:forwardSeconds", payload);
+    },
+    backwardSeconds(payload: { seconds: number }): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:backwardSeconds", payload);
+    },
+    backwardToBeginning(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:backwardToBeginning");
+    },
+    copyTrackUrl(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:copyTrackUrl");
+    },
+    copyArtistAndTitle(): Promise<{ success: boolean; output?: string; error?: string }> {
+      return ipcRenderer.invoke("spotify:copyArtistAndTitle");
+    },
+    getMyPlaylists(payload: { limit?: number }): Promise<any[]> {
+      return ipcRenderer.invoke("spotify:getMyPlaylists", payload);
+    },
+    getQueue(): Promise<any[]> {
+      return ipcRenderer.invoke("spotify:getQueue");
+    },
+    getDevices(): Promise<any[]> {
+      return ipcRenderer.invoke("spotify:getDevices");
+    },
+    getCurrentlyPlaying(): Promise<any> {
+      return ipcRenderer.invoke("spotify:getCurrentlyPlaying");
+    },
   },
   appleNotes: {
     search(query: string): Promise<AppleNotesSearchResult> {

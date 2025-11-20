@@ -4,6 +4,7 @@ import {
   initializeGemini,
   isGeminiInitialized,
   type GeminiStreamChunk,
+  type ConversationHistory,
 } from "@/lib/gemini";
 import { getAction } from "@/lib/actions";
 import type { Action } from "@/types/actions";
@@ -18,6 +19,7 @@ export interface UseGeminiResult {
       onComplete?: () => void;
       onError?: (error: Error) => void;
     },
+    conversationHistory?: ConversationHistory[],
   ) => Promise<void>;
   initialize: (apiKey: string) => void;
   initialized: boolean;
@@ -53,7 +55,7 @@ export function useGemini(options: UseGeminiOptions = {}): UseGeminiResult {
       onChunk?: (chunk: GeminiStreamChunk) => void;
       onComplete?: () => void;
       onError?: (error: Error) => void;
-    }) => {
+    }, conversationHistory?: ConversationHistory[]) => {
       if (!isGeminiInitialized()) {
         const err = new Error("Gemini not initialized. Please provide API key.");
         setError(err);
@@ -103,7 +105,7 @@ export function useGemini(options: UseGeminiOptions = {}): UseGeminiResult {
             callbacks?.onError?.(err);
             options.onError?.(err);
           },
-        });
+        }, conversationHistory);
       } catch (err) {
         setIsStreaming(false);
         const error = err instanceof Error ? err : new Error(String(err));

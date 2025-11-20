@@ -1,10 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatEntry, PromptWindow } from "@/types/chat";
+import type { PendingAction } from "@/types/actions";
 import { useAutoHeight } from "@/hooks/useAutoHeight";
 import { PromptInputBox } from "@/components/prompt-input-box";
+import { TaskApprovalWindow } from "@/components/task-approval-window";
 import { cn } from "@/lib/utils";
 import { useEffect, useState, useRef } from "react";
+import { SpotifyInlineControls } from "@/components/spotify-inline-controls";
+import { useSpotify } from "@/hooks/useSpotify";
 
 interface PromptWindowProps {
   win: PromptWindow;
@@ -22,12 +26,16 @@ interface PromptWindowProps {
   showInput?: boolean;
   maxHeight?: number; // Maximum height constraint for revealed cards
   isStacked?: boolean; // Whether this card is in the stack (not top card)
+  // Action approval props - for inline decision window
+  pendingAction?: PendingAction | null;
+  onActionApprove?: () => void;
+  onActionCancel?: () => void;
 }
 
-export function PromptWindow({ 
-  win, 
-  zIndex, 
-  onClose, 
+export function PromptWindow({
+  win,
+  zIndex,
+  onClose,
   className,
   inputValue,
   onInputChange,
@@ -39,6 +47,9 @@ export function PromptWindow({
   showInput = false,
   maxHeight,
   isStacked = false,
+  pendingAction,
+  onActionApprove,
+  onActionCancel,
 }: PromptWindowProps) {
   const { containerRef, contentRef } = useAutoHeight(500);
   const [isAnimating, setIsAnimating] = useState(true);
@@ -47,6 +58,30 @@ export function PromptWindow({
   const headerRef = useRef<HTMLDivElement>(null);
   const inputBoxRef = useRef<HTMLDivElement>(null);
   const isStreaming = win.status === "streaming";
+
+  // Check if Spotify controls should be shown - ONLY if prompt explicitly mentions Spotify
+  // This prevents false positives when asking about other things (like Chrome tabs)
+  // We check the prompt only, not entries, to avoid false matches
+  const promptMentionsSpotify = /\bspotify\b/i.test(win.prompt);
+
+  // Also check if a Spotify action was executed - look for very specific action result messages
+  const hasSpotifyAction = win.entries.some(e => {
+    const body = e.body || "";
+    // Match only very specific Spotify action result patterns (exact phrases)
+    return (
+      /^playing spotify$/i.test(body.trim()) ||
+      /^paused spotify$/i.test(body.trim()) ||
+      /^volume set to \d+%$/i.test(body.trim()) ||
+      /^skipped to (next|previous) track$/i.test(body.trim()) ||
+      /^toggled (play\/pause|shuffle|repeat)$/i.test(body.trim()) ||
+      /^now playing:/i.test(body.trim()) ||
+      /^playing: .+ - .+$/i.test(body.trim()) // "Playing: Artist - Song"
+    );
+  });
+
+  const { status: spotifyStatus, isConfigured: spotifyConfigured } = useSpotify();
+  // Only show if prompt mentions Spotify OR a Spotify action was executed
+  const shouldShowSpotify = (promptMentionsSpotify || hasSpotifyAction) && spotifyConfigured;
 
   useEffect(() => {
     // Trigger entrance animation
@@ -59,7 +94,7 @@ export function PromptWindow({
 
   useEffect(() => {
     let resizeTimeout: NodeJS.Timeout | null = null;
-    
+
     const updateDimensions = () => {
       if (!containerRef.current || !headerRef.current || !contentRef.current) return;
 
@@ -67,25 +102,25 @@ export function PromptWindow({
       const containerTop = containerRef.current.getBoundingClientRect().top;
       const headerHeight = headerRef.current.getBoundingClientRect().height;
       const inputBoxHeight = inputBoxRef.current?.getBoundingClientRect().height || (showInput ? 60 : 0);
-      
+
       // Use minimal padding from top since we want card to stick to top for long content
       const topPadding = 20; // Minimal top padding
       const bottomPadding = 20; // Bottom padding
-      
+
       // Calculate natural content height (header + content + input)
       // Use scrollHeight to get the natural content height regardless of current constraints
       // This gives us the true height the content wants to be
       const contentNaturalHeight = contentRef.current.scrollHeight;
       const naturalTotalHeight = headerHeight + contentNaturalHeight + inputBoxHeight;
-      
+
       // Calculate max available height
       let maxHeightFromTop = viewportHeight - topPadding - bottomPadding;
-      
+
       // If maxHeight is provided (for revealed cards), use it as the constraint
       if (maxHeight !== undefined && maxHeight < maxHeightFromTop) {
         maxHeightFromTop = maxHeight;
       }
-      
+
       // If natural height fits within available space, use natural height and no scrolling
       if (naturalTotalHeight <= maxHeightFromTop) {
         setContainerHeight(naturalTotalHeight);
@@ -112,7 +147,7 @@ export function PromptWindow({
     const initialTimeout = setTimeout(updateDimensions, 100);
     window.addEventListener('resize', debouncedUpdate);
     const resizeObserver = new ResizeObserver(debouncedUpdate);
-    
+
     if (containerRef.current) {
       resizeObserver.observe(containerRef.current);
     }
@@ -141,15 +176,14 @@ export function PromptWindow({
         "pointer-events-auto w-full flex flex-col gap-0 rounded-xl overflow-hidden",
         "transition-[scale,opacity,translate,height] ease-out will-change-transform",
         isAnimating ? "opacity-0 scale-95" : "opacity-100 scale-100",
+        "bg-transparent shadow-none", // Container is now transparent
         className
       )}
       style={{
         height: containerHeight !== null ? `${containerHeight}px` : undefined,
-        transitionDuration: isAnimating ? "0ms" : "200ms",
-        transitionTimingFunction: "cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+        transitionDuration: isAnimating ? "0ms" : "300ms",
+        transitionTimingFunction: "cubic-bezier(0.2, 0.8, 0.2, 1)",
         zIndex,
-        boxShadow: "0 0 50px rgba(0, 0, 0, 0.10), 0 0 100px rgba(0, 0, 0, 0.06), 0 0 150px rgba(0, 0, 0, 0.04), 0 8px 32px rgba(0, 0, 0, 0.08)",
-        filter: "drop-shadow(0 0 2px rgba(255, 255, 255, 0.5))",
       }}
       onDragOver={(e) => {
         e.preventDefault();
@@ -168,79 +202,45 @@ export function PromptWindow({
       }}
     >
       <Card
-        className="w-full rounded-xl overflow-hidden p-0 flex flex-col flex-1 min-h-0"
-        style={{
-          background: "transparent",
-          backdropFilter: "none",
-          WebkitBackdropFilter: "none",
-          border: "none",
-          borderBottom: isStacked ? "2px solid transparent" : "none",
-          boxShadow: "none",
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
+        className="w-full rounded-xl overflow-hidden p-0 flex flex-col flex-1 min-h-0 bg-white/95 backdrop-blur-xl border border-glass-border shadow-glass-lg"
       >
         {/* Conversation header with function name in a pill */}
-        <div 
+        <div
           ref={headerRef}
-          className="px-5 pt-4 pb-3 relative flex-shrink-0"
-          style={{
-            background: "linear-gradient(to bottom, rgba(255, 255, 255, 0.98) 0%, rgba(250, 250, 250, 0.95) 50%, rgba(248, 248, 248, 0.92) 100%)",
-            backdropFilter: "blur(60px) saturate(120%)",
-            WebkitBackdropFilter: "blur(60px) saturate(120%)",
-            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.03)",
-            transition: "all 200ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
-          }}
+          className="px-6 pt-5 pb-0 relative flex-shrink-0"
         >
-          <div className="flex items-center justify-between mb-3">
-            <div 
-              className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-800"
-              style={{
-                background: "rgba(255, 255, 255, 0.92)",
-                backdropFilter: "blur(30px)",
-                WebkitBackdropFilter: "blur(30px)",
-                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.03)",
-              }}
-            >
-              {win.entries.find(e => e.kind === "response")?.sourceLabel ?? "Sky"}
+          <div className="flex items-start justify-between mb-1">
+            <div className="flex-1 min-w-0 mr-4 flex gap-2">
+              <span className="text-white/50 mt-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+              </span>
+              <CardTitle className='text-white text-[15px] leading-relaxed font-normal tracking-normal truncate'>
+                {win.prompt}
+              </CardTitle>
             </div>
             {onClose ? (
               <button
                 type="button"
                 onClick={() => onClose(win.id)}
-                className="rounded-lg border border-slate-200/50 bg-white/40 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-white/60 hover:opacity-100 opacity-72 transition-opacity transition-colors"
+                className="rounded-full p-1.5 text-sky-200/70 hover:text-white hover:bg-white/10 transition-all duration-200 flex-shrink-0"
               >
-                Close
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
               </button>
             ) : null}
           </div>
-          <CardTitle className="text-slate-900 text-base font-semibold leading-tight" style={{ color: "rgb(15, 23, 42)" }}>
-            {win.prompt}
-          </CardTitle>
         </div>
-        
+
         {/* Response section with different transparency */}
-        <CardContent 
+        <CardContent
           ref={contentRef as unknown as React.Ref<HTMLDivElement>}
           className={cn(
-            "px-5 py-4",
-            maxContentHeight !== null ? "overflow-y-auto scrollbar-thin scrollbar-thumb-pink-300/30 scrollbar-track-transparent flex-1" : "flex-shrink-0"
+            "px-6 pt-2 pb-5",
+            maxContentHeight !== null ? "overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent flex-1" : "flex-shrink-0"
           )}
           style={{
-            background: "linear-gradient(to bottom, rgba(252, 252, 252, 0.95) 0%, rgba(248, 248, 248, 0.88) 40%, rgba(245, 245, 245, 0.80) 100%)",
-            backdropFilter: "blur(60px) saturate(120%)",
-            WebkitBackdropFilter: "blur(60px) saturate(120%)",
-            boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.4)",
             maxHeight: maxContentHeight !== null ? `${maxContentHeight}px` : undefined,
             scrollbarWidth: maxContentHeight !== null ? "thin" : undefined,
-            scrollbarColor: maxContentHeight !== null ? "rgba(120, 120, 120, 0.25) transparent" : undefined,
-            transition: "all 200ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+            scrollbarColor: maxContentHeight !== null ? "rgba(255, 255, 255, 0.2) transparent" : undefined,
           } as React.CSSProperties}
           onDragOver={(e) => {
             e.preventDefault();
@@ -251,18 +251,32 @@ export function PromptWindow({
             e.stopPropagation();
           }}
         >
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5 text-sky-100/90">
+            {/* Spotify inline controls - show if window has Spotify-related content */}
+            {shouldShowSpotify && <SpotifyInlineControls />}
             {win.entries
               .filter((e) => e.kind !== "prompt")
               .map((entry) => (
                 <EntryBlock key={entry.id} entry={entry} winStatus={win.status} />
               ))}
+
+            {/* Inline Task Approval Window */}
+            {pendingAction && onActionApprove && onActionCancel && (
+              <div className="mt-2">
+                <TaskApprovalWindow
+                  pendingAction={pendingAction}
+                  onApprove={onActionApprove}
+                  onCancel={onActionCancel}
+                  position="inline"
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
       {/* Input box below response card - no gap, blends seamlessly */}
       {showInput && inputValue !== undefined && onInputChange && onSubmit ? (
-        <div ref={inputBoxRef} className="flex-shrink-0">
+        <div ref={inputBoxRef} className="flex-shrink-0 bg-transparent border-none">
           <PromptInputBox
             inputValue={inputValue}
             onInputChange={onInputChange}
@@ -280,43 +294,34 @@ export function PromptWindow({
 
 function EntryBlock({ entry, winStatus }: { entry: ChatEntry; winStatus?: PromptWindow["status"] }) {
   const isStreaming = winStatus === "streaming";
-  
+
   return (
-    <div className="flex flex-col gap-3" style={{ 
-      transition: "all 200ms cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+    <div className="flex flex-col gap-3" style={{
+      transition: "all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
     }}>
-      {entry.sourceLabel && (
-        <div className="flex items-center gap-2">
-          <Badge variant="default" className="text-xs">
-            {entry.sourceLabel}
-          </Badge>
-        </div>
-      )}
       {entry.heading ? (
-        <div className="font-semibold text-base leading-snug" style={{ color: "rgb(15, 23, 42)" }}>
+        <div className="font-semibold text-base leading-snug text-white">
           {entry.heading}
         </div>
       ) : null}
       {entry.body ? (
         <p className={cn(
-          "leading-relaxed text-[15px]",
+          "leading-relaxed text-[15px] text-sky-100/90 font-normal",
           isStreaming && "animate-pulse"
-        )} style={{ color: "rgb(30, 41, 59)" }}>
+        )}>
           {entry.body}
         </p>
       ) : null}
       {entry.bullets ? (
-        <ul className="list-disc pl-5 space-y-1.5 text-[15px] leading-relaxed" style={{ color: "rgb(30, 41, 59)" }}>
+        <ul className="list-disc pl-5 space-y-1.5 text-[15px] leading-relaxed text-sky-100/90 font-normal">
           {entry.bullets.map((b, i) => (
             <li key={i}>{b}</li>
           ))}
         </ul>
       ) : null}
       {entry.footnote ? (
-        <p className="text-xs mt-2" style={{ color: "rgb(100, 116, 139)" }}>{entry.footnote}</p>
+        <p className="text-xs mt-2 text-sky-200/60">{entry.footnote}</p>
       ) : null}
     </div>
   );
 }
-
-

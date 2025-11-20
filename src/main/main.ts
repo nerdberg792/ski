@@ -7,6 +7,7 @@ import type { ActionExecution } from "../renderer/types/actions";
 import { SpotifyAuthManager } from "./spotify-auth";
 import { SpotifyApiClient } from "./spotify-api";
 import { buildScriptEnsuringSpotifyIsRunning } from "./spotify-helpers";
+import * as spotify from "./spotify";
 import * as appleNotes from "./apple-notes";
 import * as appleMaps from "./apple-maps";
 import * as appleReminders from "./apple-reminders";
@@ -62,10 +63,10 @@ function createOverlayWindow(): Promise<BrowserWindow> {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     return Promise.resolve(overlayWindow);
   }
-  
+
   isWindowReady = false;
   const defaultPos = getDefaultPosition();
-  
+
   overlayWindow = new BrowserWindow({
     width: COMPACT_SIZE.width,
     height: COMPACT_SIZE.height,
@@ -128,12 +129,12 @@ function createOverlayWindow(): Promise<BrowserWindow> {
 
 async function toggleOverlay(force?: boolean) {
   if (isQuitting) return;
-  
+
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     await createOverlayWindow();
   }
   if (!overlayWindow || isQuitting) return;
-  
+
   // Wait for window to be ready if it was just created
   if (!isWindowReady) {
     await new Promise<void>((resolve) => {
@@ -147,9 +148,9 @@ async function toggleOverlay(force?: boolean) {
       checkReady();
     });
   }
-  
+
   if (isQuitting || !overlayWindow) return;
-  
+
   const shouldShow = force ?? !overlayWindow.isVisible();
   if (shouldShow) {
     overlayWindow.showInactive();
@@ -163,15 +164,15 @@ async function toggleOverlay(force?: boolean) {
 
 function setWindowSize(size: { width: number; height: number }, animated = true) {
   if (!overlayWindow) return;
-  
+
   const [x, y] = overlayWindow.getPosition();
   const currentSize = overlayWindow.getSize();
-  
+
   // When expanding, position below the compact widget
   // When collapsing, keep the same top position
   let newX = x;
   let newY = y;
-  
+
   if (size.width === EXPANDED_SIZE.width && size.height === EXPANDED_SIZE.height) {
     // Expanding: position below, centered horizontally
     newX = Math.max(0, x - (EXPANDED_SIZE.width - COMPACT_SIZE.width) / 2);
@@ -181,13 +182,13 @@ function setWindowSize(size: { width: number; height: number }, animated = true)
     newX = x + (currentSize[0] - COMPACT_SIZE.width) / 2;
     newY = y;
   }
-  
+
   // Ensure window stays within screen bounds
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   newX = Math.max(0, Math.min(newX, screenWidth - size.width));
   newY = Math.max(0, Math.min(newY, screenHeight - size.height));
-  
+
   overlayWindow.setBounds({
     x: newX,
     y: newY,
@@ -202,24 +203,24 @@ function registerShortcuts() {
 
 app.whenReady().then(async () => {
   nativeTheme.themeSource = "dark";
-  
+
   // Load environment variables BEFORE creating window
   const dotenv = require("dotenv");
   const result = dotenv.config();
-  
+
   if (result.error) {
     console.error("Error loading .env file:", result.error);
   } else {
     console.log("Environment variables loaded");
   }
-  
+
   // Debug: log if API key is found
   if (process.env.GEMINI_API_KEY) {
     console.log("GEMINI_API_KEY found:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
   } else {
     console.warn("GEMINI_API_KEY not found in environment variables");
   }
-  
+
   const spotifyConfig = {
     clientId: process.env.SPOTIFY_CLIENT_ID ?? "",
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET ?? "",
@@ -371,15 +372,15 @@ app.whenReady().then(async () => {
         set idPart to third text item of spotifyURL
         return ("https://open.spoqify.com/track/" & idPart)
       `);
-      
+
       const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`);
       const anonymizedUrl = stdout.trim();
-      
+
       if (anonymizedUrl) {
         await shell.openExternal(anonymizedUrl);
         return { success: true, url: anonymizedUrl };
       }
-      
+
       throw new Error("Failed to get track URL");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -397,26 +398,127 @@ app.whenReady().then(async () => {
           return theURL
         end tell
       `;
-      
+
       const { stdout } = await execAsync(`osascript -e '${getUrlScript.replace(/'/g, "'\\''")}'`);
       const theURL = stdout.trim();
-      
+
       if (!theURL) {
         throw new Error("No URL found in active Chrome tab");
       }
-      
+
       // Open URL in Spotify
       const openScript = buildScriptEnsuringSpotifyIsRunning(`
         activate
         open location "${theURL}"
       `);
-      
+
       await execAsync(`osascript -e '${openScript.replace(/'/g, "'\\''")}'`);
       return { success: true, url: theURL };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { success: false, error: message };
     }
+  });
+
+  // Comprehensive Spotify Actions IPC handlers
+  ipcMain.handle("spotify:getCurrentTrack", async () => {
+    return await spotify.getCurrentTrack();
+  });
+
+  ipcMain.handle("spotify:togglePlayPause", async () => {
+    return await spotify.togglePlayPause();
+  });
+
+  ipcMain.handle("spotify:play", async () => {
+    return await spotify.play();
+  });
+
+  ipcMain.handle("spotify:pause", async () => {
+    return await spotify.pause();
+  });
+
+  ipcMain.handle("spotify:nextTrack", async () => {
+    return await spotify.nextTrack();
+  });
+
+  ipcMain.handle("spotify:previousTrack", async () => {
+    return await spotify.previousTrack();
+  });
+
+  ipcMain.handle("spotify:setVolume", async (_, payload: { level: number }) => {
+    return await spotify.setVolume(payload.level);
+  });
+
+  ipcMain.handle("spotify:increaseVolume", async (_, payload: { step?: number }) => {
+    return await spotify.increaseVolume(payload.step);
+  });
+
+  ipcMain.handle("spotify:decreaseVolume", async (_, payload: { step?: number }) => {
+    return await spotify.decreaseVolume(payload.step);
+  });
+
+  ipcMain.handle("spotify:muteVolume", async () => {
+    return await spotify.muteVolume();
+  });
+
+  ipcMain.handle("spotify:setVolumePercent", async (_, payload: { percent: number }) => {
+    return await spotify.setVolumePercent(payload.percent);
+  });
+
+  ipcMain.handle("spotify:toggleShuffle", async () => {
+    return await spotify.toggleShuffle();
+  });
+
+  ipcMain.handle("spotify:toggleRepeat", async () => {
+    return await spotify.toggleRepeat();
+  });
+
+  ipcMain.handle("spotify:forwardSeconds", async (_, payload: { seconds: number }) => {
+    return await spotify.forwardSeconds(payload.seconds);
+  });
+
+  ipcMain.handle("spotify:backwardSeconds", async (_, payload: { seconds: number }) => {
+    return await spotify.backwardSeconds(payload.seconds);
+  });
+
+  ipcMain.handle("spotify:backwardToBeginning", async () => {
+    return await spotify.backwardToBeginning();
+  });
+
+  ipcMain.handle("spotify:copyTrackUrl", async () => {
+    return await spotify.copyTrackUrl();
+  });
+
+  ipcMain.handle("spotify:copyArtistAndTitle", async () => {
+    return await spotify.copyArtistAndTitle();
+  });
+
+  ipcMain.handle("spotify:getMyPlaylists", async (_, payload: { limit?: number }) => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return await spotify.getMyPlaylists(spotifyApi, payload.limit);
+  });
+
+  ipcMain.handle("spotify:getQueue", async () => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return await spotify.getQueue(spotifyApi);
+  });
+
+  ipcMain.handle("spotify:getDevices", async () => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return await spotify.getDevices(spotifyApi);
+  });
+
+  ipcMain.handle("spotify:getCurrentlyPlaying", async () => {
+    if (!spotifyApi) {
+      throw new Error("Spotify is not configured.");
+    }
+    return await spotify.getCurrentlyPlaying(spotifyApi);
   });
 
   // Apple Notes IPC handlers

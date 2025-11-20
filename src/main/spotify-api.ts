@@ -116,7 +116,8 @@ export class SpotifyApiClient {
             ...(request.positionMs != null ? { position_ms: request.positionMs } : {}),
           };
 
-    const response = await this.request("/me/player/play", {
+    // Use requestApi directly to get the Response object before parsing
+    const response = await this.manager.requestApi("/me/player/play", {
       method: "PUT",
       body: JSON.stringify(body),
     });
@@ -129,6 +130,11 @@ export class SpotifyApiClient {
     if (!response.ok && response.status !== 204) {
       const errorText = await response.text().catch(() => response.statusText);
       throw new Error(`Failed to play: ${errorText || response.statusText}`);
+    }
+    
+    // 204 means success, no body to parse
+    if (response.status === 204) {
+      return;
     }
   }
 

@@ -1,7 +1,7 @@
 import { PromptWindow } from "@/types/chat";
 import { PromptWindow as PromptWindowCard } from "@/components/prompt-window";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import type { PendingAction } from "@/types/actions";
 import { TaskApprovalWindow } from "@/components/task-approval-window";
@@ -25,6 +25,8 @@ interface PromptWindowsStackProps {
   pendingAction?: PendingAction | null;
   onActionApprove?: () => void;
   onActionCancel?: () => void;
+  // Hold gesture progress callback
+  onHoldProgressChange?: (progress: number, cardId: string | null) => void;
 }
 
 export function PromptWindowsStack({
@@ -44,11 +46,21 @@ export function PromptWindowsStack({
   pendingAction,
   onActionApprove,
   onActionCancel,
+  onHoldProgressChange,
 }: PromptWindowsStackProps) {
   // Newest first for rendering
   const ordered = [...windows].sort((a, b) => b.createdAt - a.createdAt);
   const [revealedCardHeight, setRevealedCardHeight] = useState<number | null>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Hold-and-reveal gesture state
+  const [holdingCardId, setHoldingCardId] = useState<string | null>(null);
+  const holdProgressMotion = useMotionValue(0); // Use motion value for smooth animation
+  const [holdProgress, setHoldProgress] = useState(0); // Keep state for threshold checking
+  const holdTimerRef = useRef<number | null>(null);
+  const holdStartTimeRef = useRef<number | null>(null);
+  const HOLD_DURATION = 500; // ms - total duration to reach 100%
+  const COMMIT_THRESHOLD = 0.6; // 60% - point of no return
 
   // Calculate how much to push cards down when revealing
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -59,47 +71,58 @@ export function PromptWindowsStack({
   // Measure revealed card height to calculate push distance
   useEffect(() => {
     if (revealedCardId) {
-      let rafId: number | null = null;
-      let isScheduled = false;
-      
+      // Measure the revealed card's height
       const measureHeight = () => {
         const revealedCardElement = cardRefs.current.get(revealedCardId);
         if (revealedCardElement) {
-          const height = revealedCardElement.offsetHeight;
+          const height = revealedCardElement.getBoundingClientRect().height;
           setRevealedCardHeight(height);
         }
-        isScheduled = false;
       };
 
-      // Throttled measure using requestAnimationFrame
-      const throttledMeasure = () => {
-        if (!isScheduled) {
-          isScheduled = true;
-          rafId = requestAnimationFrame(measureHeight);
-        }
-      };
+      // Initial measure
+      measureHeight();
 
-      // Initial measure after a short delay
-      const timeoutId = setTimeout(measureHeight, 100);
-      
-      // Measure on window resize (already throttled by rAF)
-      window.addEventListener('resize', throttledMeasure);
-      
-      // Use ResizeObserver with throttling to track content changes
-      const revealedCardElement = cardRefs.current.get(revealedCardId);
+      // Set up ResizeObserver to track height changes
       let resizeObserver: ResizeObserver | null = null;
-      
+      const revealedCardElement = cardRefs.current.get(revealedCardId);
+
       if (revealedCardElement) {
-        resizeObserver = new ResizeObserver(throttledMeasure);
+        resizeObserver = new ResizeObserver(() => {
+          measureHeight();
+        });
         resizeObserver.observe(revealedCardElement);
       }
-      
+
       return () => {
-        clearTimeout(timeoutId);
-        if (rafId !== null) {
-          cancelAnimationFrame(rafId);
+        if (resizeObserver) {
+          resizeObserver.disconnect();
         }
-        window.removeEventListener('resize', throttledMeasure);
+      };
+    } else if (holdingCardId) {
+      // During hold gesture, measure the held card's height
+      const measureHeight = () => {
+        const heldCardElement = cardRefs.current.get(holdingCardId);
+        if (heldCardElement) {
+          const height = heldCardElement.getBoundingClientRect().height;
+          setRevealedCardHeight(height);
+        }
+      };
+
+      measureHeight();
+
+      // Set up ResizeObserver for held card
+      let resizeObserver: ResizeObserver | null = null;
+      const heldCardElement = cardRefs.current.get(holdingCardId);
+
+      if (heldCardElement) {
+        resizeObserver = new ResizeObserver(() => {
+          measureHeight();
+        });
+        resizeObserver.observe(heldCardElement);
+      }
+
+      return () => {
         if (resizeObserver) {
           resizeObserver.disconnect();
         }
@@ -107,43 +130,119 @@ export function PromptWindowsStack({
     } else {
       setRevealedCardHeight(null);
     }
-  }, [revealedCardId, ordered]);
+  }, [revealedCardId, holdingCardId, ordered]);
 
-  // Calculate the push down offset based on revealed card height
-  const calculatePushDownOffset = (pushedCardDepth: number) => {
-    if (!revealedCardHeight || !revealedCardId) {
-      // Default fallback - don't push if no revealed card
+  // Cleanup hold gesture timers
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current !== null) {
+        cancelAnimationFrame(holdTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Reset hold progress when not holding
+  useEffect(() => {
+    if (!holdingCardId) {
+      setHoldProgress(0);
+      holdStartTimeRef.current = null;
+    }
+  }, [holdingCardId]);
+
+  // Notify parent of hold progress changes
+  useEffect(() => {
+    if (onHoldProgressChange) {
+      onHoldProgressChange(holdProgress, holdingCardId);
+    }
+  }, [holdProgress, holdingCardId, onHoldProgressChange]);
+
+  // Calculate the push down offset based on revealed/held card height
+  const calculatePushDownOffset = (pushedCardDepth: number, targetCardId?: string | null) => {
+    // Use provided cardId or fall back to revealedCardId
+    const cardId = targetCardId || revealedCardId;
+
+    if (!revealedCardHeight || !cardId) {
+      // Default fallback - don't push if no revealed/held card
       return 0;
     }
 
-    const revealedCardIndex = ordered.findIndex(w => w.id === revealedCardId);
-    if (revealedCardIndex === -1) return 0;
+    const cardIndex = ordered.findIndex(w => w.id === cardId);
+    if (cardIndex === -1) return 0;
 
     const elevationPerCard = 22; // 20px peek + 2px gap
-    const revealedCardBaseOffset = -revealedCardIndex * elevationPerCard;
+    const cardBaseOffset = -cardIndex * elevationPerCard;
     const pushedCardBaseOffset = -pushedCardDepth * elevationPerCard;
-    
-    // Calculate where the revealed card is positioned (absolute position in viewport)
+
+    // Calculate where the revealed/held card is positioned (absolute position in viewport)
     // The card starts at cardTopMargin, adjusted by its base offset
-    const revealedCardTop = cardTopMargin + revealedCardBaseOffset;
-    const revealedCardBottom = revealedCardTop + revealedCardHeight;
-    
-    // Calculate ideal position for pushed card top (revealed card bottom + gap)
-    const idealPushedCardTop = revealedCardBottom + gapBetweenCards;
-    
+    const cardTop = cardTopMargin + cardBaseOffset;
+    const cardBottom = cardTop + revealedCardHeight;
+
+    // Calculate ideal position for pushed card top (card bottom + gap)
+    const idealPushedCardTop = cardBottom + gapBetweenCards;
+
     // Calculate the maximum allowed position (keeping peek amount visible)
     const maxPushedCardTop = viewportHeight - peekAmountAtBottom;
-    
+
     // Use the smaller of the two to ensure card stays visible
     const targetPushedCardTop = Math.min(idealPushedCardTop, maxPushedCardTop);
-    
+
     // The pushed card's natural position (without y transform)
     const pushedCardNaturalTop = cardTopMargin + pushedCardBaseOffset;
-    
+
     // Calculate the y offset needed (from natural position to target position)
     const pushDownOffset = targetPushedCardTop - pushedCardNaturalTop;
-    
+
     return Math.max(0, pushDownOffset); // Don't push up, only down
+  };
+
+  // Hold gesture handlers
+  const startHold = (cardId: string) => {
+    setHoldingCardId(cardId);
+    holdStartTimeRef.current = Date.now();
+
+    const animateProgress = () => {
+      if (holdStartTimeRef.current === null) return;
+
+      const elapsed = Date.now() - holdStartTimeRef.current;
+      const progress = Math.min(elapsed / HOLD_DURATION, 1);
+
+      // Update motion value for smooth animation (doesn't trigger re-render)
+      holdProgressMotion.set(progress);
+
+      // Update state every frame for smooth interpolation
+      setHoldProgress(progress);
+
+      if (progress < 1) {
+        holdTimerRef.current = requestAnimationFrame(animateProgress);
+      }
+    };
+
+    holdTimerRef.current = requestAnimationFrame(animateProgress);
+  };
+
+  const endHold = (cardId: string) => {
+    if (holdTimerRef.current !== null) {
+      cancelAnimationFrame(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    // Check if we passed the commit threshold
+    if (holdProgress >= COMMIT_THRESHOLD && onRevealCard) {
+      // Commit to reveal
+      onRevealCard(cardId);
+    }
+    // If below threshold, just reset (cards will snap back via state reset)
+
+    setHoldingCardId(null);
+  };
+
+  const cancelHold = () => {
+    if (holdTimerRef.current !== null) {
+      cancelAnimationFrame(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    setHoldingCardId(null);
   };
 
   return (
@@ -162,7 +261,10 @@ export function PromptWindowsStack({
         }}
         initial={{ marginTop: 20, opacity: 0 }}
         animate={{
-          marginTop: revealedCardId ? 20 : 20,
+          // Only push down container when fully revealed, not during hold
+          marginTop: revealedCardId && revealedCardHeight
+            ? 20 + (revealedCardHeight * 0.5) // Fully revealed state
+            : 20, // Default state (no push during hold)
           opacity: 1,
         }}
         transition={{
@@ -183,23 +285,37 @@ export function PromptWindowsStack({
             const depth = index;
             const isTopWindow = depth === 0;
             const isRevealed = revealedCardId === win.id;
-            const elevationPerCard = 22; // 20px peek + 2px gap
+            const elevationPerCard = 12; // Reduced gap for tighter stack
             const peekHeight = 60;
 
             // Calculate positions
             const baseOffset = -depth * elevationPerCard;
             const isPushedToBottom = revealedCardId && depth < ordered.findIndex(w => w.id === revealedCardId);
-            
-            // Calculate how much to push this card down (if it's being pushed)
-            const pushDownOffset = isPushedToBottom ? calculatePushDownOffset(depth) : 0;
-            
+
+            // Check if this card is being held or if a card below it is being held
+            const isBeingHeld = holdingCardId === win.id;
+            const isAboveHeldCard = holdingCardId && depth < ordered.findIndex(w => w.id === holdingCardId);
+
+            // Calculate how much to push this card down
+            let pushDownOffset = 0;
+            if (isPushedToBottom) {
+              // Fully revealed state
+              pushDownOffset = calculatePushDownOffset(depth);
+            } else if (isAboveHeldCard && holdingCardId && !isBeingHeld && revealedCardHeight) {
+              // Progressive reveal based on hold progress - ONLY for cards ABOVE the held card
+              // Use the same calculation as fully revealed, but interpolate with holdProgress
+              const targetOffset = calculatePushDownOffset(depth, holdingCardId);
+              pushDownOffset = targetOffset * holdProgress;
+            }
+            // Note: held card itself (isBeingHeld) gets NO pushDownOffset - it stays in place
+
             // Calculate max height for revealed card to prevent it from covering pushed cards
             let maxRevealedCardHeight: number | undefined = undefined;
             if (isRevealed) {
               // Available space = viewport height - card top margin - gap - peek amount
               maxRevealedCardHeight = viewportHeight - cardTopMargin - gapBetweenCards - peekAmountAtBottom;
             }
-            
+
             return (
               <motion.div
                 key={win.id}
@@ -215,100 +331,133 @@ export function PromptWindowsStack({
                 initial={{
                   top: baseOffset,
                   zIndex: 100 + (ordered.length - index),
-                  scale: 0.92,
+                  scale: 0.95,
                   opacity: 0,
-                  y: 20,
+                  y: 300, // Start from bottom
+                  rotateX: -10,
                 }}
                 animate={{
                   top: baseOffset,
                   // Move cards ABOVE revealed card DOWN but keep part visible at bottom
                   y: pushDownOffset,
                   zIndex: 100 + (ordered.length - index),
-                  scale: isRevealed ? 1 : 1 - 0.02 * depth,
-                  // Cards pushed to bottom should be fully visible for easy clicking
-                  opacity: isTopWindow || isRevealed || isPushedToBottom ? 1 : 0.5,
+                  // Interpolate scale for held card
+                  scale: isRevealed
+                    ? 1
+                    : isBeingHeld
+                      ? 1 - 0.03 * depth * (1 - holdProgress) // Gradually scale up to 1
+                      : 1 - 0.03 * depth,
+                  // Interpolate opacity for held card
+                  opacity: isTopWindow || isRevealed || isPushedToBottom
+                    ? 1
+                    : isBeingHeld
+                      ? Math.max(0.4, 1 - depth * 0.15) + ((1 - Math.max(0.4, 1 - depth * 0.15)) * holdProgress) // Gradually increase to 1
+                      : Math.max(0.4, 1 - depth * 0.15),
+                  // Interpolate rotateX for held card
+                  rotateX: isRevealed
+                    ? 0
+                    : isBeingHeld
+                      ? depth * 2 * (1 - holdProgress) // Gradually reduce rotation to 0
+                      : depth * 2,
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: 0.95,
+                  y: -20,
+                  transition: { duration: 0.2 }
                 }}
                 transition={{
-                  layout: {
-                    type: "tween",
-                    duration: 0.15,
-                    ease: [0.25, 0.1, 0.25, 1.0],
-                  },
-                  y: {
-                    type: "spring",
-                    stiffness: 500,
-                    damping: 25,
-                  },
-                  scale: {
-                    type: "tween",
-                    duration: 0.15,
-                    ease: [0.25, 0.1, 0.25, 1.0],
-                  },
-                  opacity: {
-                    type: "tween",
-                    duration: 0.15,
-                    ease: "easeOut",
-                  },
-                  top: {
-                    type: "spring",
-                    stiffness: 500,
-                    damping: 25,
-                  },
+                  layout: { type: "spring", stiffness: 300, damping: 30 },
+                  top: { type: "spring", stiffness: 300, damping: 30 },
+                  // Use instant transition for properties driven by holdProgress to prevent jitter
+                  y: isAboveHeldCard && holdingCardId && !isBeingHeld ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 30 },
+                  scale: isBeingHeld ? { duration: 0 } : { duration: 0.2 },
+                  opacity: isBeingHeld ? { duration: 0 } : { duration: 0.2 },
+                  rotateX: isBeingHeld ? { duration: 0 } : { duration: 0.4 },
+                  filter: isBeingHeld ? { duration: 0 } : { duration: 0.2 },
                 }}
                 style={{
                   pointerEvents: "auto",
-                  cursor: isPushedToBottom ? "pointer" : (depth === 0 || isRevealed ? "default" : "pointer"),
-                  height: depth === 0 || isRevealed || isPushedToBottom ? "auto" : `${peekHeight}px`,
-                  overflow: depth === 0 || isRevealed || isPushedToBottom ? "visible" : "hidden",
+                  cursor: isPushedToBottom ? "pointer" : (depth === 0 || isRevealed || isBeingHeld ? "default" : "pointer"),
+                  // Gradually increase height for held card
+                  height: depth === 0 || isRevealed || isPushedToBottom
+                    ? "auto"
+                    : isBeingHeld
+                      ? holdProgress > 0.3 ? "auto" : `${peekHeight}px` // Show full height after 30% progress
+                      : `${peekHeight}px`,
+                  // Gradually show overflow for held card
+                  overflow: depth === 0 || isRevealed || isPushedToBottom
+                    ? "visible"
+                    : isBeingHeld
+                      ? holdProgress > 0.3 ? "visible" : "hidden"
+                      : "hidden",
                   transformStyle: "preserve-3d",
+                  border: depth === 0 ? "5px solid rgba(0,0,0,0)" : undefined,
+                  backgroundClip: depth === 0 ? "padding-box" : undefined,
                 }}
                 onClick={(e) => {
-                  // Handle clicks on pushed cards OR non-top cards
+                  // Handle clicks on pushed cards OR revealed cards (second click)
                   if (isPushedToBottom || depth > 0) {
                     e.preventDefault();
                     e.stopPropagation();
-                    
+
                     if (isPushedToBottom && onRevealCard) {
                       // Clicked on pushed card: reverse the reveal action
                       onRevealCard(null);
                     } else if (isRevealed && onBringToFront) {
                       // Second click on revealed card: zoom and bring to front
                       onBringToFront(win.id);
-                    } else if (!isRevealed && onRevealCard) {
-                      // First click on stacked card: reveal the card
-                      onRevealCard(win.id);
                     }
+                    // For stacked cards, we now use hold gesture instead of click
                   }
                 }}
                 onMouseDown={(e) => {
-                  if (depth > 0) {
+                  // Start hold gesture for stacked cards (not top, not revealed, not pushed)
+                  if (depth > 0 && !isRevealed && !isPushedToBottom) {
+                    e.preventDefault();
                     e.stopPropagation();
+                    startHold(win.id);
+                  }
+                }}
+                onMouseUp={(e) => {
+                  // End hold gesture
+                  if (holdingCardId === win.id) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    endHold(win.id);
+                  }
+                }}
+                onMouseLeave={() => {
+                  // Cancel hold if mouse leaves card
+                  if (holdingCardId === win.id) {
+                    cancelHold();
                   }
                 }}
               >
                 <motion.div
                   initial={{
-                    filter: "blur(2px)",
+                    filter: "blur(4px)",
                   }}
                   animate={{
-                    // Cards pushed to bottom should be clear (no blur) for easy clicking
-                    filter: depth === 0 || isRevealed || isPushedToBottom ? "none" : "blur(0.5px)",
-                    scale: isRevealed ? 1 : 1 - 0.05 * depth,
+                    // Interpolate blur for held card
+                    filter: depth === 0 || isRevealed || isPushedToBottom
+                      ? "blur(0px)"
+                      : isBeingHeld
+                        ? `blur(${Math.max(0, depth * 1 * (1 - holdProgress))}px)` // Gradually reduce blur to 0
+                        : `blur(${depth * 1}px)`,
+                    // Interpolate scale for held card
+                    scale: isRevealed
+                      ? 1
+                      : isBeingHeld
+                        ? 1 - 0.02 * depth * (1 - holdProgress) // Gradually scale up to 1
+                        : 1 - 0.02 * depth,
                   }}
                   transition={{
-                    filter: {
-                      type: "tween",
-                      duration: 0.2,
-                      ease: "easeOut",
-                    },
-                    scale: {
-                      type: "tween",
-                      duration: 0.25,
-                      ease: [0.25, 0.1, 0.25, 1.0],
-                    },
+                    filter: { duration: 0.2 },
+                    scale: { duration: 0.2 },
                   }}
                   style={{
-                    pointerEvents: depth === 0 || isRevealed || isPushedToBottom ? "auto" : "none",
+                    pointerEvents: depth === 0 || isRevealed || isPushedToBottom || isBeingHeld ? "auto" : "none",
                     transformStyle: "preserve-3d",
                     backfaceVisibility: "hidden",
                   }}
@@ -327,39 +476,16 @@ export function PromptWindowsStack({
                     inputRef={isTopWindow && !isPushedToBottom ? inputRef : undefined}
                     maxHeight={isRevealed ? maxRevealedCardHeight : undefined}
                     isStacked={depth > 0 && !isRevealed && !isPushedToBottom}
+                    pendingAction={isTopWindow && !isPushedToBottom ? pendingAction : undefined}
+                    onActionApprove={isTopWindow && !isPushedToBottom ? onActionApprove : undefined}
+                    onActionCancel={isTopWindow && !isPushedToBottom ? onActionCancel : undefined}
                   />
                 </motion.div>
               </motion.div>
             );
           })}
         </AnimatePresence>
-        
-        {/* Task Approval Window - appears below prompt windows or standalone */}
-        {pendingAction && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{
-              type: "spring",
-              stiffness: 500,
-              damping: 25,
-            }}
-            className="mt-4"
-            style={{
-              position: "relative",
-              zIndex: 200,
-            }}
-          >
-            <TaskApprovalWindow
-              pendingAction={pendingAction}
-              onApprove={onActionApprove || (() => {})}
-              onCancel={onActionCancel || (() => {})}
-              position={pendingAction.promptWindowId ? "below-prompt" : "standalone"}
-            />
-          </motion.div>
-        )}
-      </motion.div>
-    </div>
+      </motion.div >
+    </div >
   );
 }

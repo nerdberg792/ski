@@ -35,31 +35,75 @@ function buildSystemPrompt(basePrompt: string): string {
   const spotifyCapabilities = `
 ## Spotify Integration Capabilities
 
-You have access to Spotify control functions that you can call directly. When users ask about music, Spotify, or want to control playback, you can use these function tools:
+You have comprehensive access to Spotify control functions. When users ask about music, Spotify, or want to control playback, you can use these function tools:
 
-**Available Spotify Functions:**
-- spotify-play: Resume or start playback on the active Spotify device
-- spotify-pause: Pause playback on the active Spotify device
+**Basic Playback Controls:**
+- spotify-play: Resume or start playback
+- spotify-pause: Pause playback
 - spotify-toggle-play: Toggle between play and pause
 - spotify-next: Skip to the next track
 - spotify-previous: Go back to the previous track
-- spotify-set-volume: Set volume level (0-100) - requires "level" parameter
-- spotify-play-track: Play a specific track, album, or playlist by URI - requires "uri" parameter (e.g., "spotify:track:4iV5W9uYEdYUVa79Axb7Rh")
-- spotify-search: Search for tracks, albums, artists, playlists, shows, or episodes - requires "query" parameter, optional "category" parameter
+- spotify-current-track: Get information about the currently playing track
+
+**Volume Controls:**
+- spotify-set-volume: Set volume level (0-100) - requires "level" parameter (number)
+- spotify-increase-volume: Increase volume by step (default 10) - optional "step" parameter (number)
+- spotify-decrease-volume: Decrease volume by step (default 10) - optional "step" parameter (number)
+- spotify-volume-0: Mute volume (set to 0%)
+- spotify-volume-25: Set volume to 25%
+- spotify-volume-50: Set volume to 50%
+- spotify-volume-75: Set volume to 75%
+- spotify-volume-100: Set volume to 100%
+
+**Playback Controls:**
+- spotify-toggle-shuffle: Toggle shuffle mode on/off
+- spotify-toggle-repeat: Toggle repeat mode on/off
+- spotify-forward-seconds: Skip forward by specified seconds - requires "seconds" parameter (number)
+- spotify-backward-seconds: Skip backward by specified seconds - requires "seconds" parameter (number)
+- spotify-skip-15: Skip forward 15 seconds
+- spotify-back-15: Skip backward 15 seconds
+- spotify-backward-to-beginning: Go back to the beginning of the current track
+
+**Utility Actions:**
+- spotify-copy-url: Copy the Spotify URL of the current track to clipboard
+- spotify-copy-artist-title: Copy the artist and title of the current track to clipboard
+
+**Web API Actions:**
+- spotify-search: Search for tracks, albums, artists, playlists, shows, or episodes - requires "query" parameter (string), optional "category" parameter (tracks, albums, artists, playlists, shows, episodes, or all)
+- spotify-play-track: Play a specific track, album, or playlist by URI - requires "uri" parameter (string, e.g., "spotify:track:4iV5W9uYEdYUVa79Axb7Rh")
+- spotify-queue-track: Add a track to the queue - requires "uri" parameter (string)
+- spotify-get-library: Get user's saved tracks, albums, playlists, shows, and episodes
+- spotify-get-playlists: Get all user's playlists - optional "limit" parameter (number, default 50)
+- spotify-get-queue: Get the current playback queue
+- spotify-get-devices: Get available Spotify devices
+- spotify-get-currently-playing: Get the currently playing track via Web API
+- spotify-like-track: Like a track - requires "trackId" parameter (string)
+- spotify-unlike-track: Unlike a track - requires "trackId" parameter (string)
+- spotify-play-song: Search for a song by name and automatically play the first result - requires "query" parameter (string)
 
 **Important Notes:**
 - Users must connect their Spotify account through OAuth first (they can do this via the Spotify control card)
 - Playback requires an active Spotify device (desktop app, mobile app, or web player)
-- When users ask to play music, search for songs, or control playback, use the appropriate Spotify function tool
-- For search, you can use the spotify-search function, but note that displaying results requires UI integration
-- To play a specific song, you may need to search first to get the URI, then use spotify-play-track
+- AppleScript-based controls (play, pause, volume, etc.) work directly with the Spotify macOS app
+- Web API actions require OAuth authentication
+- Search results are formatted and sent back to the user automatically
+- When getting library/playlists/queue, results are formatted and displayed automatically
 
 **Example Usage:**
 - User: "Play Spotify" → Call spotify-play
 - User: "Pause music" → Call spotify-pause
 - User: "Next song" → Call spotify-next
 - User: "Set volume to 50" → Call spotify-set-volume with level: 50
-- User: "Play [song name]" → You may need to inform the user that you can control playback but searching and playing specific tracks by name requires the Spotify control card UI
+- User: "Increase volume" → Call spotify-increase-volume
+- User: "Mute Spotify" → Call spotify-volume-0
+- User: "Toggle shuffle" → Call spotify-toggle-shuffle
+- User: "Skip 15 seconds" → Call spotify-skip-15
+- User: "What's playing?" → Call spotify-current-track or spotify-get-currently-playing
+- User: "Search for [song name]" → Call spotify-search with query: "[song name]"
+- User: "Play [song name]" → Call spotify-play-song with query: "[song name]" (this will search and play automatically)
+- User: "Show my playlists" → Call spotify-get-playlists
+- User: "What's in my queue?" → Call spotify-get-queue
+- User: "Show my devices" → Call spotify-get-devices
 `;
 
   const appleNotesCapabilities = `
@@ -277,9 +321,15 @@ You have access to Browser Profiles functions that you can call directly. When u
   return `${spotifyCapabilities}\n\n${appleNotesCapabilities}\n\n${appleMapsCapabilities}\n\n${appleRemindersCapabilities}\n\n${appleStocksCapabilities}\n\n${finderCapabilities}\n\n${browserBookmarksCapabilities}\n\n${browserHistoryCapabilities}\n\n${browserTabsCapabilities}\n\n${browserProfilesCapabilities}\n\nUser query: ${basePrompt}`;
 }
 
+export interface ConversationHistory {
+  role: "user" | "model";
+  parts: Array<{ text: string }>;
+}
+
 export async function streamGeminiResponse(
   prompt: string,
   options: GeminiStreamOptions,
+  conversationHistory?: ConversationHistory[],
 ): Promise<void> {
   if (!geminiClient) {
     throw new Error("Gemini client not initialized. Call initializeGemini first.");
@@ -296,36 +346,36 @@ export async function streamGeminiResponse(
     description: a.description,
     parameters: a.parameters?.map(p => ({ name: p.name, type: p.type, required: p.required })),
   })));
-  
+
   const functionDeclarations = actions.map((action) => {
-      const properties: Record<string, { type: SchemaType; description?: string }> = {};
-      
-      if (action.parameters) {
-        for (const param of action.parameters) {
-          let paramType: SchemaType = SchemaType.STRING;
-          if (param.type === "number") {
-            paramType = SchemaType.NUMBER;
-          } else if (param.type === "boolean") {
-            paramType = SchemaType.BOOLEAN;
-          }
-          
-          properties[param.name] = {
-            type: paramType,
-            description: param.description,
-          } as any; // Type assertion needed due to complex Schema union types
+    const properties: Record<string, { type: SchemaType; description?: string }> = {};
+
+    if (action.parameters) {
+      for (const param of action.parameters) {
+        let paramType: SchemaType = SchemaType.STRING;
+        if (param.type === "number") {
+          paramType = SchemaType.NUMBER;
+        } else if (param.type === "boolean") {
+          paramType = SchemaType.BOOLEAN;
         }
+
+        properties[param.name] = {
+          type: paramType,
+          description: param.description,
+        } as any; // Type assertion needed due to complex Schema union types
       }
-      
-      return {
-        name: action.id,
-        description: action.description,
-        parameters: {
-          type: SchemaType.OBJECT,
-          properties,
-          required: action.parameters?.filter((p) => p.required).map((p) => p.name) || [],
-        },
-      };
-    });
+    }
+
+    return {
+      name: action.id,
+      description: action.description,
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties,
+        required: action.parameters?.filter((p) => p.required).map((p) => p.name) || [],
+      },
+    };
+  });
 
   try {
     // Use gemini-2.5-flash - latest stable model with enhanced capabilities
@@ -341,9 +391,10 @@ export async function streamGeminiResponse(
       toolCount: functionDeclarations.length,
       functionNames: functionDeclarations.map(f => f.name),
     });
-    
+
     const chat = model.startChat({
       tools,
+      history: conversationHistory || [],
     });
 
     // Use sendMessageStream which maps to streamGenerateContent endpoint
@@ -353,7 +404,7 @@ export async function streamGeminiResponse(
       promptPreview: enhancedPrompt.substring(0, 100) + (enhancedPrompt.length > 100 ? "..." : ""),
       model: "gemini-2.5-flash",
     });
-    
+
     const result = await chat.sendMessageStream(enhancedPrompt);
 
     let fullText = "";
@@ -377,14 +428,14 @@ export async function streamGeminiResponse(
           actionId: functionCall.name,
           parameters: functionCall.args as Record<string, string | number | boolean>,
         };
-        
+
         // Log the function call request from Gemini
         console.log("🔧 [Gemini] Function call detected:", {
           actionId: functionCall.name,
           parameters: functionCall.args,
           fullFunctionCall: functionCall,
         });
-        
+
         // Send the action proposal
         options.onChunk({
           text: "",
@@ -404,13 +455,13 @@ export async function streamGeminiResponse(
     options.onComplete?.();
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    
+
     // Log error details for debugging
     console.error("Gemini API Error:", {
       message: err.message,
       name: err.name,
     });
-    
+
     options.onError?.(err);
     throw err;
   }
